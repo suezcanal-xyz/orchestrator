@@ -119,6 +119,7 @@ class RunResult:
     task_outcomes: list[TaskOutcome] = field(default_factory=list)
     verdict: Verdict | None = None
     usage: dict = field(default_factory=dict)
+    nothing_to_do: bool = False
 
 
 def execute_task(
@@ -278,6 +279,10 @@ def run(
             cwd=repo, prompt_text=prompt_text, plan=doc, graph=graph,
             context_block=run_wide_context, worker=implement_workers[0],
         )
+        if reconcile_result.worker_response is not None:
+            evidence.save_worker_response(
+                run_paths, "reconcile", "reconcile", reconcile_result.worker_response
+            )
         extensions.run_hooks("reconcile_done", repo=repo, prompt=prompt_text, result=reconcile_result)
 
     batches = graph.parallelizable_batches()
@@ -317,8 +322,16 @@ def run(
     state.save_task_store(repo, graph)
     doc.sync_task_section(graph)
 
+    # "Nothing to do" is not a failure: reconcile ran, found the request
+    # already satisfied (or a QUESTION/DEFER), and there were no pending
+    # tasks either. Don't mark the milestone BLOCKED for that.
+    nothing_to_do = not ordered_tasks and not any(
+        t.status not in ("DONE", "DEFERRED") for t in graph.all()
+    )
+
     verdict = build_verdict(repo, doc, graph, timeout_per_command=verification_timeout)
-    doc.meta.status = verdict.result_status
+    if not nothing_to_do:
+        doc.meta.status = verdict.result_status
     doc.save(plan_path(repo))
     run_paths.plan_after.write_text(doc.render(), encoding="utf-8")
 
@@ -326,9 +339,13 @@ def run(
     (run_paths.root / "usage.json").write_text(
         json.dumps(usage_summary, indent=2) + "\n", encoding="utf-8"
     )
-    evidence.write_verdict(
-        run_paths, verdict.render() + "\n" + evidence.format_cost_section(usage_summary)
-    )
+    verdict_text = verdict.render() + "\n" + evidence.format_cost_section(usage_summary)
+    if nothing_to_do:
+        verdict_text = verdict_text.replace(
+            f"NOT READY FOR {verdict.target_version}",
+            "NO WORK -- request already satisfied or no pending tasks",
+        )
+    evidence.write_verdict(run_paths, verdict_text)
 
     manifest = state.RunManifest(
         run_id=run_paths.run_id,
@@ -337,9 +354,10 @@ def run(
         started_at=started_at,
         protected_branch=git.default_branch(repo),
         finished_at=state.now_iso(),
-        status=verdict.result_status.value,
+        status="NO_WORK" if nothing_to_do else verdict.result_status.value,
         active_milestone=doc.meta.active_milestone,
         task_ids=[o.task_id for o in outcomes],
+        notes="reconcile found nothing to do" if nothing_to_do else "",
     )
     manifest.save(run_paths)
     extensions.run_hooks("run_finished", manifest=manifest, verdict=verdict, run_paths=run_paths)
@@ -347,6 +365,7 @@ def run(
     return RunResult(
         manifest=manifest, run_paths=run_paths, plan=doc, graph=graph,
         task_outcomes=outcomes, verdict=verdict, usage=usage_summary,
+        nothing_to_do=nothing_to_do,
     )
 
 

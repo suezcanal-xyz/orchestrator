@@ -134,6 +134,10 @@ def run(repo: Path, prompt: str | None, workers: tuple[str, ...], max_debug_atte
     for o in result.task_outcomes:
         click.echo(f"{o.task_id}: {o.status}  (debug attempts: {o.debug_attempts})")
     click.echo("")
+    if result.nothing_to_do:
+        click.echo("NO WORK -- reconcile found the request already satisfied and no pending tasks.")
+        click.echo(f"run: {result.run_paths.root}")
+        return
     click.echo(result.verdict.render())
     click.echo(f"run: {result.run_paths.root}")
     if result.verdict.result_status.value != "READY_FOR_REVIEW":
