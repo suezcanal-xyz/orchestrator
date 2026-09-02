@@ -1,0 +1,175 @@
+"""Engine-level test of the closed development loop, with scripted (non-CLI)
+workers standing in for real Codex/Claude calls -- see spec section 22 for
+the full 17-step acceptance scenario this mirrors at the engine level. The
+live version against real `codex exec` / `claude -p` is a separate,
+explicitly-invoked test (test_integration_v0_1_0_live.py)."""
+
+import re
+
+import pytest
+
+from conftest import init_repo
+from orchestrator import engine, git, state
+from orchestrator.task_graph import Task, TaskGraph
+from orchestrator.workers.base import Worker, WorkerResponse
+
+TEST_ADD_PY = 'from add_mod import add\n\ndef test_add():\n    assert add(2, 3) == 5\n'
+TEST_MUL_PY = 'from mul_mod import mul\n\ndef test_mul():\n    assert mul(2, 3) == 6\n'
+
+
+class ScriptedWorker(Worker):
+    """Stands in for a real CLI worker: parses which task/stage it was asked
+    to handle out of the prompt text (the same prompts base.py builds for a
+    real worker) and runs a scripted file edit instead of shelling out."""
+
+    def __init__(self, name, actions):
+        self.name = name
+        self._actions = actions
+        self.calls: list[tuple[str, str]] = []
+
+    def _invoke(self, cwd, prompt, *, timeout, allow_edit, structured=False):
+        m = re.search(r"# (Debug task|Task) ([A-Z]+-\d+)", prompt)
+        stage = "debug" if m and m.group(1) == "Debug task" else "implement"
+        task_id = m.group(2) if m else "?"
+        self.calls.append((task_id, stage))
+        action = self._actions.get((task_id, stage))
+        if action:
+            action(cwd)
+        return WorkerResponse(
+            ok=True, summary=f"{stage} done for {task_id}", raw_output="", duration_seconds=0.01, worker=self.name
+        )
+
+
+def write_correct_add(cwd):
+    (cwd / "add_mod.py").write_text("def add(a, b):\n    return a + b\n", encoding="utf-8")
+
+
+def write_wrong_mul(cwd):
+    # intentional bug: addition instead of multiplication (spec section 22 step 11)
+    (cwd / "mul_mod.py").write_text("def mul(a, b):\n    return a + b\n", encoding="utf-8")
+
+
+def write_correct_mul(cwd):
+    (cwd / "mul_mod.py").write_text("def mul(a, b):\n    return a * b\n", encoding="utf-8")
+
+
+@pytest.fixture
+def demo_repo(tmp_path):
+    return init_repo(
+        tmp_path / "demo",
+        files={"tests/test_add.py": TEST_ADD_PY, "tests/test_mul.py": TEST_MUL_PY},
+    )
+
+
+def _seed_tasks(repo):
+    graph = TaskGraph(
+        [
+            Task(
+                id="TEST-001",
+                title="Implement add()",
+                status="READY",
+                acceptance=["add(2, 3) == 5"],
+                verification=["python -m pytest tests/test_add.py -q"],
+                files_hint=["add_mod.py"],
+            ),
+            Task(
+                id="TEST-002",
+                title="Implement mul()",
+                status="READY",
+                acceptance=["mul(2, 3) == 6"],
+                verification=["python -m pytest tests/test_mul.py -q"],
+                files_hint=["mul_mod.py"],
+            ),
+        ]
+    )
+    state.save_task_store(repo, graph)
+    return graph
+
+
+def test_closed_loop_happy_path_and_cross_model_debug(demo_repo):
+    repo = demo_repo
+    _seed_tasks(repo)
+    main_head_before = git.head_commit(repo)
+
+    claude = ScriptedWorker("claude", {
+        ("TEST-001", "implement"): write_correct_add,
+        ("TEST-002", "debug"): write_correct_mul,  # cross-model: claude fixes codex's bug
+    })
+    codex = ScriptedWorker("codex", {
+        ("TEST-002", "implement"): write_wrong_mul,
+    })
+
+    result = engine.run(repo=repo, prompt_text=None, implement_workers=[claude, codex])
+
+    outcomes = {o.task_id: o for o in result.task_outcomes}
+    assert outcomes["TEST-001"].status == "DONE"
+    assert outcomes["TEST-001"].debug_attempts == 0
+
+    assert outcomes["TEST-002"].status == "DONE"
+    assert outcomes["TEST-002"].debug_attempts == 1  # failed once, fixed on first debug attempt
+
+    # cross-model debugging actually happened: codex implemented, claude debugged
+    assert ("TEST-002", "implement") in codex.calls
+    assert ("TEST-002", "debug") in claude.calls
+
+    # protected branch untouched: no new commit landed on main (spec section
+    # 17, 22 step 17). docs/PLAN.md and .gitignore are legitimately modified
+    # in the main working tree -- that's the durable-memory design (spec
+    # section 1) -- but nothing was committed onto the branch, and no task
+    # code leaked out of its worktree.
+    assert git.current_branch(repo) == "main"
+    assert git.head_commit(repo) == main_head_before
+    assert not (repo / "add_mod.py").exists()  # only the worktree has it, not main
+    assert not (repo / "mul_mod.py").exists()
+    assert ".orchestrator/" in (repo / ".gitignore").read_text(encoding="utf-8")
+
+    # PLAN.md updated with actual state
+    assert result.plan.get_section("Tasks")
+    assert "TEST-001" in result.plan.get_section("Tasks")
+    assert "DONE" in result.plan.get_section("Tasks")
+
+    # VERDICT.md produced
+    assert result.run_paths.verdict.exists()
+    assert result.verdict is not None
+
+    # evidence trail exists for both tasks
+    assert (result.run_paths.diffs_dir / "TEST-001.diff").exists()
+    assert (result.run_paths.diffs_dir / "TEST-002.diff").exists()
+    assert (result.run_paths.evidence_dir / "TEST-002.debug-1.json").exists()
+
+
+def test_task_that_never_gets_fixed_is_blocked(demo_repo):
+    repo = demo_repo
+    graph = TaskGraph(
+        [
+            Task(
+                id="TEST-003",
+                title="Implement mul() badly forever",
+                status="READY",
+                acceptance=["mul(2, 3) == 6"],
+                verification=["python -m pytest tests/test_mul.py -q"],
+                files_hint=["mul_mod.py"],
+            )
+        ]
+    )
+    state.save_task_store(repo, graph)
+
+    stubborn = ScriptedWorker("codex", {("TEST-003", "implement"): write_wrong_mul})
+    # no fix ever supplied for debug stage -> stays wrong every attempt
+
+    result = engine.run(
+        repo=repo, prompt_text=None, implement_workers=[stubborn], max_debug_attempts=2
+    )
+    outcome = result.task_outcomes[0]
+    assert outcome.status == "BLOCKED"
+    assert outcome.debug_attempts == 2
+    assert "exhausted 2 debug attempts" in outcome.reason
+    assert result.plan.meta.status.value == "BLOCKED"
+
+
+def test_status_reports_without_executing(demo_repo):
+    repo = demo_repo
+    _seed_tasks(repo)
+    s = engine.status(repo)
+    assert s["total_tasks"] == 2
+    assert s["tasks_by_status"]["READY"] == 2

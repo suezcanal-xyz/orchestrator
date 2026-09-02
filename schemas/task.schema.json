@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://suezcanal-xyz.github.io/orchestrator/schemas/task.schema.json",
+  "title": "Task",
+  "type": "object",
+  "required": ["id", "title", "status", "depends_on", "acceptance", "verification", "priority"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "pattern": "^[A-Z]{2,10}-[0-9]{1,6}$" },
+    "title": { "type": "string", "minLength": 1 },
+    "status": {
+      "type": "string",
+      "enum": ["NEEDS_TRIAGE", "READY", "IN_PROGRESS", "IN_REVIEW", "BLOCKED", "DONE", "DEFERRED"]
+    },
+    "depends_on": { "type": "array", "items": { "type": "string" } },
+    "files_hint": { "type": "array", "items": { "type": "string" } },
+    "acceptance": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "verification": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "priority": { "type": "string", "enum": ["P0", "P1", "P2", "P3"] },
+    "worker": { "type": ["string", "null"], "enum": ["codex", "claude", null] },
+    "assigned_worktree": { "type": ["string", "null"] },
+    "attempts": { "type": "integer", "minimum": 0 },
+    "notes": { "type": "string" }
+  }
+}

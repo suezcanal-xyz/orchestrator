@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://suezcanal-xyz.github.io/orchestrator/schemas/run.schema.json",
+  "title": "RunManifest",
+  "type": "object",
+  "required": ["run_id", "repo", "prompt", "started_at", "status"],
+  "additionalProperties": false,
+  "properties": {
+    "run_id": { "type": "string" },
+    "repo": { "type": "string" },
+    "prompt": { "type": "string" },
+    "started_at": { "type": "string" },
+    "finished_at": { "type": ["string", "null"] },
+    "status": {
+      "type": "string",
+      "enum": ["IN_PROGRESS", "READY_FOR_REVIEW", "BLOCKED", "FAILED", "RELEASED"]
+    },
+    "active_milestone": { "type": ["string", "null"] },
+    "task_ids": { "type": "array", "items": { "type": "string" } },
+    "protected_branch": { "type": "string" },
+    "notes": { "type": "string" }
+  }
+}
