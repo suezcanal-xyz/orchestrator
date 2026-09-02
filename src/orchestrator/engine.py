@@ -21,6 +21,7 @@ execution, not just an isolation mechanism that happens not to be used.
 from __future__ import annotations
 
 import itertools
+import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -117,6 +118,7 @@ class RunResult:
     graph: TaskGraph
     task_outcomes: list[TaskOutcome] = field(default_factory=list)
     verdict: Verdict | None = None
+    usage: dict = field(default_factory=dict)
 
 
 def execute_task(
@@ -319,7 +321,14 @@ def run(
     doc.meta.status = verdict.result_status
     doc.save(plan_path(repo))
     run_paths.plan_after.write_text(doc.render(), encoding="utf-8")
-    evidence.write_verdict(run_paths, verdict.render())
+
+    usage_summary = evidence.run_usage_summary(run_paths)
+    (run_paths.root / "usage.json").write_text(
+        json.dumps(usage_summary, indent=2) + "\n", encoding="utf-8"
+    )
+    evidence.write_verdict(
+        run_paths, verdict.render() + "\n" + evidence.format_cost_section(usage_summary)
+    )
 
     manifest = state.RunManifest(
         run_id=run_paths.run_id,
@@ -337,7 +346,7 @@ def run(
 
     return RunResult(
         manifest=manifest, run_paths=run_paths, plan=doc, graph=graph,
-        task_outcomes=outcomes, verdict=verdict,
+        task_outcomes=outcomes, verdict=verdict, usage=usage_summary,
     )
 
 

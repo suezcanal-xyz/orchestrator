@@ -26,12 +26,14 @@ class ScriptedWorker(Worker):
         self.name = name
         self._actions = actions
         self.calls: list[tuple[str, str]] = []
+        self.prompts: list[str] = []
 
     def _invoke(self, cwd, prompt, *, timeout, allow_edit, structured=False):
         m = re.search(r"# (Debug task|Task) ([A-Z]+-\d+)", prompt)
         stage = "debug" if m and m.group(1) == "Debug task" else "implement"
         task_id = m.group(2) if m else "?"
         self.calls.append((task_id, stage))
+        self.prompts.append(prompt)
         action = self._actions.get((task_id, stage))
         if action:
             action(cwd)
@@ -136,6 +138,16 @@ def test_closed_loop_happy_path_and_cross_model_debug(demo_repo):
     assert (result.run_paths.diffs_dir / "TEST-001.diff").exists()
     assert (result.run_paths.diffs_dir / "TEST-002.diff").exists()
     assert (result.run_paths.evidence_dir / "TEST-002.debug-1.json").exists()
+
+    # per-task focused context: TEST-001's implement prompt names its own
+    # hinted file, not the other task's
+    impl_prompt = next(p for p, (tid, st) in zip(claude.prompts, claude.calls) if tid == "TEST-001")
+    assert "add_mod.py" in impl_prompt
+
+    # cost accounting: VERDICT has a Cost section and RunResult carries the summary
+    assert "## Cost" in result.run_paths.verdict.read_text(encoding="utf-8")
+    assert "totals" in result.usage
+    assert (result.run_paths.root / "usage.json").exists()
 
 
 def test_task_that_never_gets_fixed_is_blocked(demo_repo):

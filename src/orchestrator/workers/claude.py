@@ -82,6 +82,13 @@ class ClaudeWorker(Worker):
 
         is_error = bool(data.get("is_error"))
         ok = proc.returncode == 0 and not is_error
+        u = data.get("usage") or {}
+        usage = {
+            "input_tokens": int(u.get("input_tokens", 0) or 0),
+            "output_tokens": int(u.get("output_tokens", 0) or 0),
+            "cache_read_tokens": int(u.get("cache_read_input_tokens", 0) or 0),
+            "cost_usd": data.get("total_cost_usd"),
+        }
         return WorkerResponse(
             ok=ok,
             summary=str(data.get("result", "")),
@@ -91,5 +98,5 @@ class ClaudeWorker(Worker):
             session_id=data.get("session_id"),
             cost_usd=data.get("total_cost_usd"),
             error=None if ok else str(data.get("result") or f"exit {proc.returncode}"),
-            extra={"num_turns": data.get("num_turns"), "subtype": data.get("subtype")},
+            extra={"num_turns": data.get("num_turns"), "subtype": data.get("subtype"), "usage": usage},
         )

@@ -66,3 +66,66 @@ def save_verification(run_paths: "RunPaths", task_id: str, results: list["Verifi
 def write_verdict(run_paths: "RunPaths", verdict_text: str) -> Path:
     run_paths.verdict.write_text(verdict_text, encoding="utf-8")
     return run_paths.verdict
+
+
+_USAGE_KEYS = ("input_tokens", "output_tokens", "cache_read_tokens")
+
+
+def run_usage_summary(run_paths: "RunPaths") -> dict:
+    """Aggregate every `<task>.<stage>.json` worker-response file in this run
+    into cost + token totals, broken down by worker and by stage.
+
+    `stage` is the part after the last dot before `.json` with any trailing
+    `-<n>` (debug-1, debug-2) folded into `debug`.
+    """
+    totals = {"cost_usd": 0.0, **{k: 0 for k in _USAGE_KEYS}}
+    by_worker: dict[str, dict] = {}
+    by_stage: dict[str, dict] = {}
+
+    for path in sorted(run_paths.evidence_dir.glob("*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        worker = data.get("worker") or "unknown"
+        stem_parts = path.stem.split(".")
+        stage = stem_parts[-1] if len(stem_parts) > 1 else "unknown"
+        stage = stage.split("-")[0]  # debug-1 -> debug
+
+        usage = (data.get("extra") or {}).get("usage") or {}
+        cost = data.get("cost_usd")
+        if cost is None:
+            cost = usage.get("cost_usd", 0.0) or 0.0
+
+        for bucket, key in ((by_worker, worker), (by_stage, stage)):
+            slot = bucket.setdefault(key, {"cost_usd": 0.0, **{k: 0 for k in _USAGE_KEYS}})
+            slot["cost_usd"] += float(cost)
+            for k in _USAGE_KEYS:
+                slot[k] += int(usage.get(k, 0) or 0)
+        totals["cost_usd"] += float(cost)
+        for k in _USAGE_KEYS:
+            totals[k] += int(usage.get(k, 0) or 0)
+
+    return {"totals": totals, "by_worker": by_worker, "by_stage": by_stage}
+
+
+def format_cost_section(summary: dict) -> str:
+    t = summary["totals"]
+    lines = ["## Cost", "", f"Total: ${t['cost_usd']:.4f}"]
+    tok = t["input_tokens"] + t["output_tokens"]
+    if tok:
+        lines.append(
+            f"Tokens: {tok:,} ({t['input_tokens']:,} in / {t['output_tokens']:,} out"
+            + (f" / {t['cache_read_tokens']:,} cache-read" if t["cache_read_tokens"] else "")
+            + ")"
+        )
+    if summary["by_worker"]:
+        lines += ["", "By worker:"]
+        for w, s in sorted(summary["by_worker"].items()):
+            lines.append(f"  {w}: ${s['cost_usd']:.4f}  ({s['input_tokens'] + s['output_tokens']:,} tok)")
+    if summary["by_stage"]:
+        lines += ["", "By stage:"]
+        for st, s in sorted(summary["by_stage"].items()):
+            lines.append(f"  {st}: ${s['cost_usd']:.4f}  ({s['input_tokens'] + s['output_tokens']:,} tok)")
+    lines.append("")
+    return "\n".join(lines)
