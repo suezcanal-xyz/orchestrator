@@ -66,8 +66,17 @@ thing checkable and check it deterministically.
 ## Adding a worker
 
 Implement `Worker._invoke()` (see `workers/codex.py` / `workers/claude.py`
-for the shape) and either add it to `cli._builtin_workers()` (public,
-generally useful) or register it from a private extension:
+/ `workers/opencode.py` for the shape) and either add it to
+`cli._builtin_workers()` (public, generally useful) or register it from a
+private extension:
+
+`workers/opencode.py` is the most recent worked example: ~120 lines, all
+of it inside `_invoke()` plus a tolerant JSON-event parser. Note how the
+multi-KB prompt is written to a temp file and passed with `--file` rather
+than as an argv string -- under `shell=True` on Windows (needed to launch
+a `.cmd` shim) `cmd.exe` re-parses the command line and mangles embedded
+quotes, so only short fixed flags go through argv. `codex.py` and
+`claude.py` solve the same problem by piping the prompt over stdin.
 
 ```python
 from orchestrator import extensions

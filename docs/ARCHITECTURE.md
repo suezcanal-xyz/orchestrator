@@ -57,6 +57,7 @@ src/orchestrator/
                   worker only has to implement `_invoke()`.
     codex.py      OpenAI Codex CLI worker (`codex exec`).
     claude.py     Anthropic Claude Code CLI worker (`claude -p`).
+    opencode.py   opencode CLI worker (`opencode run --format json`).
   verifier.py     Runs declared verification commands, captures full
                   evidence (exit code, stdout/stderr, duration, commit).
                   A worker's claim of success has zero authority here.
@@ -83,10 +84,21 @@ src/orchestrator/
                   register_context_provider / register_policy /
                   register_hook) -- the only way orchestrator-private is
                   meant to extend this repository's behavior.
-  cli.py          `orchestrator inspect|ingest|plan|run|verify|status`.
-                  The only place concrete workers (Codex, Claude) are
-                  imported by name; everything below only knows the
-                  abstract Worker interface.
+  policy.py       Resolves effective run config by layering built-in
+                  default < registered private policy < explicit CLI flag
+                  (worker list, max_debug_attempts, verification_timeout,
+                  context_char_budget). Deterministic, no model calls.
+  scaffold.py     `orchestrator init`: drop a starter docs/PLAN.md +
+                  AGENTS.md into a repo (packaged templates/), never
+                  overwriting.
+  dashboard/      Optional (`dashboard` extra): FastAPI app + one static
+                  HTML page behind `orchestrator onboarding`. A thin shell
+                  over doctor / init / run, progress streamed off the hook
+                  bus. No auth; 127.0.0.1 only.
+  cli.py          `orchestrator inspect|init|ingest|plan|run|verify|status|
+                  doctor|onboarding`. The only place concrete workers
+                  (Codex, Claude, opencode) are imported by name;
+                  everything below only knows the abstract Worker interface.
 ```
 
 ## Execution model
