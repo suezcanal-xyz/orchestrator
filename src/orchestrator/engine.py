@@ -27,6 +27,7 @@ from pathlib import Path
 
 from orchestrator import context as context_mod
 from orchestrator import evidence
+from orchestrator import extensions
 from orchestrator import git
 from orchestrator import plan as plan_mod
 from orchestrator import reconcile as reconcile_mod
@@ -87,6 +88,7 @@ def ingest(repo: Path, prompt_text: str, worker: Worker) -> IngestResult:
     )
     doc.save(plan_path(repo))
     state.save_task_store(repo, graph)
+    extensions.run_hooks("reconcile_done", repo=repo, prompt=prompt_text, result=result)
     return IngestResult(plan=doc, graph=graph, reconcile_result=result)
 
 
@@ -129,27 +131,39 @@ def execute_task(
     The orchestrator -- not the worker -- performs the git commit after each
     call returns (spec section 23), so there is always a known commit for
     evidence regardless of what the model did inside the worktree.
+
+    Fires task_started / task_implemented / task_verified /
+    task_debug_attempt / task_done / task_blocked hooks (see
+    `extensions.register_hook`) as each phase completes, so a caller (the
+    CLI's live progress printer, a notification integration, ...) sees
+    progress as it happens rather than only once the whole task returns.
+    Called from a worker thread when part of a parallel batch -- hook
+    functions must be safe to call from multiple threads concurrently.
     """
     task.status = "IN_PROGRESS"
     wt = git.create_worktree(repo, run_id, task.id)
     task.assigned_worktree = str(wt.path)
     task.worker = implement_worker.name
     protected = git.default_branch(repo)
+    extensions.run_hooks("task_started", task=task, worker=implement_worker.name)
 
     response = implement_worker.implement(wt.path, task, context_block)
     evidence.save_worker_response(run_paths, task.id, "implement", response)
 
     commit = git.commit_all(wt.path, f"{task.id}: {task.title}\n\nImplemented by {implement_worker.name}.")
     evidence.save_diff(run_paths, task.id, git.diff(wt.path, base_ref=protected))
+    extensions.run_hooks("task_implemented", task=task, worker=implement_worker.name, response=response, commit=commit)
 
     results = run_verification(
         task.verification, wt.path, timeout_per_command=verification_timeout,
         commit=commit, worker=implement_worker.name, attempt=1,
     )
     evidence.save_verification(run_paths, task.id, results)
+    passed = overall_passed(results)
+    extensions.run_hooks("task_verified", task=task, results=results, passed=passed, attempt=1)
 
     debug_attempts = 0
-    if not overall_passed(results):
+    if not passed:
         outcome = run_debug_loop(
             cwd=wt.path,
             task=task,
@@ -162,6 +176,7 @@ def execute_task(
             get_diff_fn=lambda: git.diff(wt.path, base_ref=protected),
             commit_fn=lambda msg: git.commit_all(wt.path, msg),
             max_attempts=max_debug_attempts,
+            on_attempt=lambda record: extensions.run_hooks("task_debug_attempt", task=task, record=record),
         )
         for i, a in enumerate(outcome.attempts, start=1):
             evidence.save_worker_response(run_paths, task.id, f"debug-{i}", a.debugger_response)
@@ -173,17 +188,21 @@ def execute_task(
         if outcome.status != "FIXED":
             task.status = "BLOCKED"
             task.attempts += 1
-            return TaskOutcome(
+            blocked_outcome = TaskOutcome(
                 task_id=task.id, status="BLOCKED", worktree=wt.path, branch=wt.branch, commit=commit,
                 verification=results, debug_attempts=debug_attempts, reason=outcome.reason,
             )
+            extensions.run_hooks("task_blocked", task=task, outcome=blocked_outcome)
+            return blocked_outcome
 
     task.status = "DONE"
     task.attempts += 1
-    return TaskOutcome(
+    done_outcome = TaskOutcome(
         task_id=task.id, status="DONE", worktree=wt.path, branch=wt.branch, commit=commit,
         verification=results, debug_attempts=debug_attempts, reason="verification passed",
     )
+    extensions.run_hooks("task_done", task=task, outcome=done_outcome)
+    return done_outcome
 
 
 def build_verdict(
@@ -244,14 +263,20 @@ def run(
     context_block = ctx.to_prompt_block()
 
     if prompt_text:
-        reconcile_mod.reconcile(
+        reconcile_result = reconcile_mod.reconcile(
             cwd=repo, prompt_text=prompt_text, plan=doc, graph=graph,
             context_block=context_block, worker=implement_workers[0],
         )
+        extensions.run_hooks("reconcile_done", repo=repo, prompt=prompt_text, result=reconcile_result)
 
     batches = graph.parallelizable_batches()
     ordered_tasks = [t for batch in batches for t in batch]
     assignment = _assign_workers(ordered_tasks, implement_workers)
+
+    extensions.run_hooks(
+        "run_started", repo=repo, run_id=run_paths.run_id, prompt=prompt_text,
+        task_ids=[t.id for t in ordered_tasks], batch_count=len(batches),
+    )
 
     outcomes: list[TaskOutcome] = []
     for batch in batches:
@@ -297,6 +322,7 @@ def run(
         task_ids=[o.task_id for o in outcomes],
     )
     manifest.save(run_paths)
+    extensions.run_hooks("run_finished", manifest=manifest, verdict=verdict, run_paths=run_paths)
 
     return RunResult(
         manifest=manifest, run_paths=run_paths, plan=doc, graph=graph,

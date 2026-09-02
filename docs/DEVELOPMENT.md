@@ -76,7 +76,18 @@ extensions.register_worker("my-model", MyWorker)
 
 then pass `--worker my-model` on the CLI. No other file needs to change --
 `engine.py` and `reconcile.py`/`debugger.py` only depend on the abstract
-`Worker` interface.
+`Worker` interface. `orchestrator doctor` reports any agent CLI it finds
+on PATH with no registered Worker, so you know what's worth adding.
+
+**opencode** (detected by `orchestrator doctor`, not yet implemented):
+`opencode run [message] --dir <path> --format json --auto` is the
+non-interactive contract (verified via `opencode run --help`; `--auto`
+auto-approves permissions, the same class of flag as Codex's
+`danger-full-access` or Claude's `bypassPermissions` -- same caveats
+apply, see `docs/SECURITY.md`). This has **not** been live-verified end
+to end in this repo (no authenticated provider was available while
+building it) -- confirm the JSON output shape (`--format json`) actually
+matches what `WorkerResponse` expects before trusting it in production.
 
 ## Adding a verifier, context provider, policy, or hook
 
@@ -92,3 +103,48 @@ Same pattern, via the other four functions in `extensions.py`. See
 - No abstraction added ahead of a second concrete use (spec section 21) --
   if you're building a plugin system, a registry, or a config layer that
   nothing yet needs, stop and cut it.
+
+## CI
+
+`.github/workflows/ci.yml` runs the mocked test suite (never the live
+integration test -- that costs real API usage and needs authenticated
+CLIs, neither appropriate for a public CI run) on `ubuntu-latest` and
+`windows-latest`, across Python 3.11 and 3.12, on every push to `main` and
+every PR. Keep it that way: this repo shells out to OS-specific process
+invocation (see `workers/base.py:resolve_executable` and its
+`shell=True`-on-Windows-`.cmd`-shims history) -- Windows-only bugs have
+already slipped through once by only testing on the author's own machine.
+It also runs `python -m build` to catch packaging breakage early.
+
+## Releasing
+
+The PyPI distribution name is `suez-orchestrator` (`orchestrator` itself
+is already taken); the import package and CLI command stay `orchestrator`
+either way -- `pip install suez-orchestrator` gives you `import
+orchestrator` and the `orchestrator` command, unchanged.
+
+One-time setup on PyPI, before the first release:
+
+1. Create the project on PyPI (upload once by hand with `twine`, or use
+   PyPI's "create a new pending publisher" flow, which reserves the name
+   without an upload).
+2. Under the project's Publishing settings, add a Trusted Publisher:
+   GitHub, owner `suezcanal-xyz`, repository `orchestrator`, workflow
+   `publish.yml`, environment `pypi`.
+3. In the GitHub repo settings, create an environment named `pypi`
+   (Settings -> Environments) -- `publish.yml` deploys through it.
+
+Once that's done, every release is just:
+
+```bash
+# bump version in pyproject.toml, commit it, then:
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+`.github/workflows/publish.yml` builds the sdist/wheel and publishes via
+OIDC (no stored PyPI token). Note: the GitHub repository is currently
+**private**; PyPI itself doesn't require a public source repo to accept an
+upload, but a private repo means `project.urls.Repository` in
+`pyproject.toml` 404s for anyone without access -- make the repo public
+(or drop/adjust that URL) before treating this as a real public release.

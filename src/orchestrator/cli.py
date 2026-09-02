@@ -6,6 +6,7 @@
     orchestrator run <repo> [--prompt "<current request>"]
     orchestrator verify <repo>
     orchestrator status <repo>
+    orchestrator doctor
 
 Concrete workers (Codex, Claude) are wired here, at the edge -- everything
 below `engine.py` only knows about the abstract Worker interface, so a
@@ -96,9 +97,14 @@ def plan_cmd(repo: Path) -> None:
 @click.option("--worker", "workers", multiple=True, default=("claude", "codex"), help="Implement workers, in assignment order.")
 @click.option("--max-debug-attempts", default=DEFAULT_MAX_DEBUG_ATTEMPTS, show_default=True)
 @click.option("--verification-timeout", default=600, show_default=True, help="Seconds per verification command.")
-def run(repo: Path, prompt: str | None, workers: tuple[str, ...], max_debug_attempts: int, verification_timeout: int) -> None:
+@click.option("--quiet", is_flag=True, help="Suppress live per-task progress; print only the final summary.")
+def run(repo: Path, prompt: str | None, workers: tuple[str, ...], max_debug_attempts: int, verification_timeout: int, quiet: bool) -> None:
     """ingest + plan + execution + verification in one pass (the daily entry point)."""
     resolved = _resolve_workers(workers)
+    if not quiet:
+        from orchestrator.progress import register_console_progress
+
+        register_console_progress()
     result = engine.run(
         repo=repo, prompt_text=prompt, implement_workers=resolved,
         max_debug_attempts=max_debug_attempts, verification_timeout=verification_timeout,
@@ -144,6 +150,25 @@ def status(repo: Path, as_json: bool) -> None:
     click.echo(f"tasks:            {s['total_tasks']} total")
     for k, v in sorted(s["tasks_by_status"].items()):
         click.echo(f"  {k}: {v}")
+
+
+@main.command()
+def doctor() -> None:
+    """Detect agent CLIs on this machine (codex, claude, opencode, ...): found,
+    authenticated, and whether a Worker exists for them. Local checks only,
+    never a billed API call."""
+    from orchestrator.doctor import format_report, run_doctor
+
+    entries = run_doctor()
+    click.echo(format_report(entries))
+    missing_worker = [e.name for e in entries if e.found and not e.worker_registered]
+    if missing_worker:
+        click.echo("")
+        click.echo(
+            f"Detected but not usable as a worker yet: {', '.join(missing_worker)}. "
+            "See docs/DEVELOPMENT.md \"Adding a worker\" to register one via "
+            "orchestrator.extensions.register_worker()."
+        )
 
 
 if __name__ == "__main__":

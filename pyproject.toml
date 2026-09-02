@@ -3,17 +3,38 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "orchestrator"
+# PyPI distribution name -- "orchestrator" itself is already taken. The
+# import package stays `orchestrator` (see [tool.hatch.build.targets.wheel]
+# below): `pip install suez-orchestrator` then `import orchestrator` /
+# `orchestrator run ...` on the CLI, same as always.
+name = "suez-orchestrator"
 version = "0.1.0"
 description = "Milestone-driven multi-agent development control plane"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
+authors = [{ name = "suezcanal.xyz" }]
+keywords = ["agents", "orchestration", "codex", "claude", "ai", "devtools"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Build Tools",
+]
 dependencies = [
     "pyyaml>=6.0",
     "jsonschema>=4.20",
     "click>=8.1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/suezcanal-xyz/orchestrator"
+Repository = "https://github.com/suezcanal-xyz/orchestrator"
+Issues = "https://github.com/suezcanal-xyz/orchestrator/issues"
 
 [project.optional-dependencies]
 dev = [

@@ -108,6 +108,7 @@ def run_debug_loop(
     get_diff_fn: Callable[[], str],
     commit_fn: Callable[[str], str | None],
     max_attempts: int = DEFAULT_MAX_DEBUG_ATTEMPTS,
+    on_attempt: Callable[[DebugAttemptRecord], None] | None = None,
 ) -> DebugOutcome:
     """Fail -> evidence -> classify -> targeted fix -> rerun -> repeat.
 
@@ -116,6 +117,10 @@ def run_debug_loop(
     fails, Claude diagnoses, Codex applies the correction, or the inverse)
     falls out naturally: pass e.g. [claude_worker, codex_worker] and attempt
     1 uses claude, attempt 2 uses codex, attempt 3 uses claude again.
+
+    on_attempt, if given, is called synchronously right after each attempt
+    finishes (pass/fail already known) -- this is how a caller gets live
+    progress out of a loop that can otherwise run silently for minutes.
     """
     results = initial_results
     attempts: list[DebugAttemptRecord] = []
@@ -139,17 +144,18 @@ def run_debug_loop(
         results = run_verification_fn()
         passed = overall_passed(results)
 
-        attempts.append(
-            DebugAttemptRecord(
-                attempt=attempt_n,
-                classification=classification,
-                debugger_worker=worker.name,
-                debugger_response=response,
-                commit=commit,
-                results_after=results,
-                passed=passed,
-            )
+        record = DebugAttemptRecord(
+            attempt=attempt_n,
+            classification=classification,
+            debugger_worker=worker.name,
+            debugger_response=response,
+            commit=commit,
+            results_after=results,
+            passed=passed,
         )
+        attempts.append(record)
+        if on_attempt:
+            on_attempt(record)
 
         if passed:
             return DebugOutcome(status="FIXED", attempts=attempts, final_results=results, reason="verification passed")
