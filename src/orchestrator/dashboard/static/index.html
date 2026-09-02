@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>orchestrator onboarding</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f7f8; --fg: #1a1a1a; --card: #fff; --border: #e2e4e8;
+    --muted: #6b7280; --accent: #2563eb; --ok: #16a34a; --warn: #d97706; --err: #dc2626;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0f1115; --fg:#e5e7eb; --card:#171a21; --border:#2a2f3a; --muted:#9ca3af; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  header { padding: 20px 24px; border-bottom: 1px solid var(--border); }
+  header h1 { margin: 0; font-size: 16px; }
+  header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  main { max-width: 860px; margin: 0 auto; padding: 24px; display: grid; gap: 16px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 18px; }
+  .card h2 { margin: 0 0 12px; font-size: 14px; }
+  .row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); }
+  .row:first-of-type { border-top: none; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--muted); }
+  .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.err { background: var(--err); }
+  .grow { flex: 1; }
+  .name { font-weight: 600; }
+  .note { color: var(--muted); font-size: 12px; }
+  button { font: inherit; padding: 6px 12px; border-radius: 7px; border: 1px solid var(--border);
+    background: var(--accent); color: #fff; cursor: pointer; }
+  button.secondary { background: transparent; color: var(--fg); }
+  button:disabled { opacity: .5; cursor: default; }
+  input[type=text], textarea { width: 100%; font: inherit; padding: 8px 10px; border-radius: 7px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--fg); }
+  textarea { min-height: 70px; resize: vertical; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
+  .checks { display: flex; gap: 14px; flex-wrap: wrap; margin: 6px 0; }
+  .checks label { display: flex; align-items: center; gap: 5px; margin: 0; color: var(--fg); font-size: 13px; }
+  pre { font-family: var(--mono); font-size: 12px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 7px; padding: 10px; overflow-x: auto; white-space: pre-wrap; }
+  #log { display: grid; gap: 4px; font-family: var(--mono); font-size: 12px; }
+  #log .l { padding: 3px 0; border-top: 1px solid var(--border); }
+  .toast { margin-top: 8px; font-size: 12px; color: var(--warn); }
+</style>
+</head>
+<body>
+<header>
+  <h1>orchestrator onboarding</h1>
+  <p>Connect your coding agents, point at a repo, and run the first pass. Runs locally; nothing leaves this machine.</p>
+</header>
+<main>
+  <section class="card">
+    <h2>1 · Connect accounts</h2>
+    <div id="workers"></div>
+    <div id="workers-toast" class="toast"></div>
+  </section>
+
+  <section class="card">
+    <h2>2 · Connect repository</h2>
+    <label>Absolute path to a git repository</label>
+    <input type="text" id="repo-path" placeholder="D:\siti\seacommons">
+    <div style="margin-top:10px; display:flex; gap:8px;">
+      <button id="repo-check">Check</button>
+      <button id="repo-init" class="secondary" hidden>Scaffold PLAN.md</button>
+    </div>
+    <pre id="repo-out" hidden></pre>
+  </section>
+
+  <section class="card">
+    <h2>3 · Start work</h2>
+    <label>Starting prompt (what should the first pass do?)</label>
+    <textarea id="prompt" placeholder="Humanitarian is still missing locations and the NGO panel is wrong"></textarea>
+    <label>Workers</label>
+    <div class="checks" id="worker-checks"></div>
+    <button id="run" style="margin-top:8px;" disabled>Run</button>
+    <div id="log" style="margin-top:12px;"></div>
+    <pre id="verdict" hidden></pre>
+  </section>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const el = (t, c, txt) => { const e = document.createElement(t); if (c) e.className = c; if (txt != null) e.textContent = txt; return e; };
+
+let doctor = [];
+
+async function loadDoctor() {
+  doctor = await (await fetch('/api/doctor')).json();
+  const box = $('#workers'); box.innerHTML = '';
+  const checks = $('#worker-checks'); checks.innerHTML = '';
+  for (const w of doctor) {
+    const authed = w.found && /authenticated|Logged in|healthy|at least one provider/i.test(w.auth_note) && !/no provider|not authenticated|could not/i.test(w.auth_note);
+    const cls = !w.found ? 'err' : (authed ? 'ok' : 'warn');
+    const row = el('div', 'row');
+    row.append(el('span', 'dot ' + cls));
+    const mid = el('div', 'grow');
+    mid.append(el('div', 'name', w.name));
+    mid.append(el('div', 'note', w.found ? w.auth_note : 'not found on PATH'));
+    row.append(mid);
+    if (w.found) {
+      const b = el('button', 'secondary', authed ? 'Reconnect' : 'Connect');
+      b.onclick = async () => {
+        b.disabled = true;
+        const r = await (await fetch('/api/login/' + w.name, {method:'POST'})).json();
+        $('#workers-toast').textContent = r.note || 'Login started; finish it, then status refreshes.';
+        setTimeout(() => { b.disabled = false; loadDoctor(); }, 4000);
+      };
+      row.append(b);
+    }
+    box.append(row);
+
+    const lab = el('label');
+    const cb = el('input'); cb.type = 'checkbox'; cb.value = w.name;
+    cb.checked = w.worker_registered && authed;
+    cb.dataset.worker = w.name;
+    lab.append(cb, document.createTextNode(' ' + w.name));
+    checks.append(lab);
+  }
+  refreshRunEnabled();
+}
+
+function chosenWorkers() {
+  return [...document.querySelectorAll('#worker-checks input:checked')].map(c => c.value);
+}
+function refreshRunEnabled() {
+  $('#run').disabled = !($('#repo-path').value.trim() && chosenWorkers().length);
+}
+$('#worker-checks').addEventListener('change', refreshRunEnabled);
+$('#repo-path').addEventListener('input', refreshRunEnabled);
+
+$('#repo-check').onclick = async () => {
+  const path = $('#repo-path').value.trim();
+  const res = await fetch('/api/repo', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({path})});
+  const out = $('#repo-out'); out.hidden = false;
+  if (!res.ok) { out.textContent = (await res.json()).detail; $('#repo-init').hidden = true; return; }
+  const s = await res.json();
+  out.textContent = `project: ${s.project}\ncurrent: ${s.current_version}  target: ${s.target_version}\nmilestone: ${s.active_milestone}\ntasks: ${s.total_tasks}  PLAN.md: ${s.plan_exists ? 'yes' : 'MISSING'}`;
+  $('#repo-init').hidden = s.plan_exists;
+};
+
+$('#repo-init').onclick = async () => {
+  const path = $('#repo-path').value.trim();
+  const r = await (await fetch('/api/init', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({path})})).json();
+  $('#repo-out').textContent += `\n\ninit: created ${r.created.join(', ') || 'nothing'}`;
+  $('#repo-init').hidden = true;
+};
+
+let es;
+$('#run').onclick = async () => {
+  const path = $('#repo-path').value.trim();
+  const prompt = $('#prompt').value.trim();
+  const workers = chosenWorkers();
+  $('#log').innerHTML = ''; $('#verdict').hidden = true;
+  const res = await fetch('/api/run', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({path, prompt, workers})});
+  if (!res.ok) { logline('error: ' + (await res.json()).detail); return; }
+  $('#run').disabled = true;
+  if (!es) { es = new EventSource('/api/events'); es.onmessage = onEvent; }
+  logline('run started...');
+};
+
+function logline(t) { const d = el('div', 'l', t); $('#log').append(d); d.scrollIntoView(); }
+
+function onEvent(m) {
+  const d = JSON.parse(m.data);
+  const e = d.event;
+  if (e === 'run_started') logline(`${(d.task_ids||[]).length} task(s) in ${d.batch_count} batch(es)`);
+  else if (e === 'reconcile_done') logline(`reconcile: ${d.classification || ''}`);
+  else if (e === 'task_started') logline(`  ${tid(d)}: ${d.worker} implementing`);
+  else if (e === 'task_verified') logline(`  ${tid(d)}: verification ${d.passed ? 'PASS' : 'FAIL'} (attempt ${d.attempt})`);
+  else if (e === 'task_debug_attempt') logline(`  ${tid(d)}: debug attempt`);
+  else if (e === 'task_done') logline(`  ${tid(d)}: DONE`);
+  else if (e === 'task_blocked') logline(`  ${tid(d)}: BLOCKED`);
+  else if (e === 'done') {
+    logline(`finished: ${d.status}`);
+    const v = $('#verdict'); v.hidden = false;
+    const cost = d.usage && d.usage.totals ? `\n\ntotal cost: $${(d.usage.totals.cost_usd||0).toFixed(4)}` : '';
+    v.textContent = d.verdict + cost + `\n\nrun: ${d.run_dir}`;
+    $('#run').disabled = false;
+  }
+  else if (e === 'error') { logline('error: ' + d.message); $('#run').disabled = false; }
+}
+function tid(d) { return d.task || d.task_id || '?'; }
+
+loadDoctor();
+</script>
+</body>
+</html>

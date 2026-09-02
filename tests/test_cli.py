@@ -79,3 +79,25 @@ def test_unknown_worker_errors_clearly(tmp_path):
     result = runner.invoke(main, ["ingest", str(repo), "x", "--worker", "nope"])
     assert result.exit_code != 0
     assert "unknown worker" in result.output
+
+
+def test_init_scaffolds_and_refuses_overwrite(tmp_path):
+    repo = init_repo(tmp_path / "demo")
+    runner = CliRunner()
+
+    r1 = runner.invoke(main, ["init", str(repo), "--project", "demo"])
+    assert r1.exit_code == 0, r1.output
+    assert "created  docs/PLAN.md" in r1.output
+    assert (repo / "docs" / "PLAN.md").exists()
+    assert (repo / "AGENTS.md").exists()
+
+    r2 = runner.invoke(main, ["init", str(repo)])
+    assert r2.exit_code == 0
+    assert "skipped  docs/PLAN.md" in r2.output
+
+
+def test_onboarding_help_works_without_the_extra():
+    runner = CliRunner()
+    result = runner.invoke(main, ["onboarding", "--help"])
+    assert result.exit_code == 0
+    assert "dashboard" in result.output

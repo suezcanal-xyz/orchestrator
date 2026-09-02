@@ -84,6 +84,22 @@ def ingest(repo: Path, prompt: str, worker: str) -> None:
     click.echo(f"docs/PLAN.md updated: {engine.plan_path(repo)}")
 
 
+@main.command()
+@click.argument("repo", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.option("--project", default=None, help="Project name for the new PLAN.md (default: repo directory name).")
+def init(repo: Path, project: str | None) -> None:
+    """Scaffold docs/PLAN.md + AGENTS.md in REPO (never overwrites)."""
+    from orchestrator.scaffold import scaffold_repo
+
+    result = scaffold_repo(repo, project)
+    for f in result.created:
+        click.echo(f"created  {f}")
+    for f in result.skipped:
+        click.echo(f"skipped  {f} (already exists)")
+    if result.created:
+        click.echo("\nEdit docs/PLAN.md (## Requirements, ## Acceptance Criteria, ## Verification Commands), then `orchestrator run`.")
+
+
 @main.command(name="plan")
 @click.argument("repo", type=click.Path(exists=True, file_okay=False, path_type=Path))
 def plan_cmd(repo: Path) -> None:
@@ -156,6 +172,30 @@ def status(repo: Path, as_json: bool) -> None:
     click.echo(f"tasks:            {s['total_tasks']} total")
     for k, v in sorted(s["tasks_by_status"].items()):
         click.echo(f"  {k}: {v}")
+
+
+@main.command()
+@click.option("--port", default=8765, show_default=True)
+@click.option("--host", default="127.0.0.1", show_default=True, help="Keep this localhost-only.")
+@click.option("--no-open", is_flag=True, help="Do not open a browser tab.")
+def onboarding(port: int, host: str, no_open: bool) -> None:
+    """Open the local onboarding dashboard (needs the `dashboard` extra)."""
+    try:
+        import uvicorn
+
+        from orchestrator.dashboard import create_app
+    except ModuleNotFoundError as e:
+        raise click.ClickException(
+            f"the dashboard needs extra dependencies ({e.name}). "
+            'Install with: pip install "suez-orchestrator[dashboard]"'
+        )
+    if not no_open:
+        import threading
+        import webbrowser
+
+        threading.Timer(1.0, lambda: webbrowser.open(f"http://{host}:{port}/")).start()
+    click.echo(f"orchestrator onboarding -> http://{host}:{port}/  (Ctrl+C to stop)")
+    uvicorn.run(create_app(), host=host, port=port, log_level="warning")
 
 
 @main.command()
