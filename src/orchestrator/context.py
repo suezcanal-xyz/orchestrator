@@ -143,21 +143,16 @@ def _git_files(root: Path) -> set[str] | None:
     handing a worker a context map that is 90% vendored noise.
     """
     try:
-        tracked = subprocess.run(
-            ["git", "ls-files", "-z"], cwd=str(root),
+        proc = subprocess.run(
+            ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+            cwd=str(root),
             capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
-        if tracked.returncode != 0:
+        if proc.returncode != 0:
             return None
-        files = {f for f in tracked.stdout.split("\0") if f}
-        others = subprocess.run(
-            ["git", "ls-files", "-z", "--others", "--exclude-standard"], cwd=str(root),
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
-        )
-        if others.returncode == 0:
-            for f in [x for x in others.stdout.split("\0") if x][:3000]:
-                files.add(f)
-        return files
+        files = [f for f in proc.stdout.split("\0") if f]
+        # cap: a scaffold with thousands of untracked files should not blow up
+        return set(files[:8000])
     except (OSError, ValueError):
         return None
 
