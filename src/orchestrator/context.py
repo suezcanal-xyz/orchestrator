@@ -132,9 +132,63 @@ def _rel(root: Path, p: Path) -> str:
         return str(p)
 
 
-def _walk(root: Path):
+def _git_files(root: Path) -> set[str] | None:
+    """Repo files git actually cares about: tracked + non-ignored untracked
+    (capped). Returns None when `root` is not a git working tree or git is
+    unavailable -- callers then fall back to a filesystem walk.
+
+    This is what stops `build_context` from spending minutes reading a
+    committed-but-gitignored virtualenv (`oci-cli-env/`, `.venv-like`
+    directories the hardcoded IGNORE_DIRS list does not know about) and
+    handing a worker a context map that is 90% vendored noise.
+    """
+    try:
+        tracked = subprocess.run(
+            ["git", "ls-files", "-z"], cwd=str(root),
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+        )
+        if tracked.returncode != 0:
+            return None
+        files = {f for f in tracked.stdout.split("\0") if f}
+        others = subprocess.run(
+            ["git", "ls-files", "-z", "--others", "--exclude-standard"], cwd=str(root),
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+        )
+        if others.returncode == 0:
+            for f in [x for x in others.stdout.split("\0") if x][:3000]:
+                files.add(f)
+        return files
+    except (OSError, ValueError):
+        return None
+
+
+def _walk(root: Path, files: set[str] | None = None):
+    """Yield (dirpath, dirnames, filenames) like os.walk. When `files` (a set
+    of repo-relative posix paths from `_git_files`) is given, the walk is
+    synthesized from that list -- no filesystem traversal, gitignored trees
+    never seen."""
+    if files is not None:
+        yield from _files_walk(root, files)
+        return
     for dirpath, dirnames, filenames in _os_walk_pruned(root):
         yield dirpath, dirnames, filenames
+
+
+def _files_walk(root: Path, files: set[str]):
+    from collections import defaultdict
+
+    by_dir: dict[str, list[str]] = defaultdict(list)
+    subdirs: dict[str, set[str]] = defaultdict(set)
+    for rel in files:
+        parts = rel.split("/")
+        by_dir["/".join(parts[:-1])].append(parts[-1])
+        for i in range(1, len(parts)):
+            parent = "/".join(parts[: i - 1])
+            subdirs[parent].add(parts[i - 1])
+    seen = set(by_dir) | set(subdirs)
+    for rel_dir in sorted(seen):
+        dirpath = root if rel_dir == "" else root / rel_dir
+        yield dirpath, sorted(subdirs.get(rel_dir, set())), by_dir.get(rel_dir, [])
 
 
 def _os_walk_pruned(root: Path):
@@ -160,7 +214,9 @@ def build_context(root: Path) -> RepoContext:
     ctx.agents_md = _read_first(root, ["AGENTS.md"])
     ctx.claude_md = _read_first(root, ["CLAUDE.md"])
 
-    for dirpath, dirnames, filenames in _walk(root):
+    git_files = _git_files(root)
+
+    for dirpath, dirnames, filenames in _walk(root, git_files):
         rel_dir = _rel(root, dirpath)
         for name in filenames:
             if name in MANIFEST_NAMES:
@@ -187,8 +243,8 @@ def build_context(root: Path) -> RepoContext:
             ctx.docs_paths.append(rel_dir)
 
     ctx.recent_commits = _recent_git_log(root)
-    ctx.directory_tree = _directory_tree(root)
-    ctx.markers, ctx.classification_hints = _scan_markers(root)
+    ctx.directory_tree = _directory_tree(root, files=git_files)
+    ctx.markers, ctx.classification_hints = _scan_markers(root, files=git_files)
 
     return ctx
 
@@ -206,13 +262,16 @@ def _recent_git_log(root: Path, n: int = 20) -> list[str]:
     return []
 
 
-def _directory_tree(root: Path, max_depth: int = 2, max_entries: int = 150) -> list[str]:
+def _directory_tree(
+    root: Path, max_depth: int = 2, max_entries: int = 150, files: set[str] | None = None
+) -> list[str]:
     out: list[str] = []
     root_depth = len(root.parts)
-    for dirpath, dirnames, filenames in _walk(root):
+    for dirpath, dirnames, filenames in _walk(root, files):
         depth = len(dirpath.parts) - root_depth
         if depth > max_depth:
-            dirnames[:] = []
+            if files is None:
+                dirnames[:] = []
             continue
         rel = _rel(root, dirpath)
         if rel != ".":
@@ -222,13 +281,13 @@ def _directory_tree(root: Path, max_depth: int = 2, max_entries: int = 150) -> l
     return out
 
 
-def _scan_markers(root: Path) -> tuple[list[Marker], dict[str, LegacyClass]]:
-    import os
-
+def _scan_markers(
+    root: Path, files: set[str] | None = None
+) -> tuple[list[Marker], dict[str, LegacyClass]]:
     markers: list[Marker] = []
     hints: dict[str, LegacyClass] = {}
     scanned = 0
-    for dirpath, dirnames, filenames in os.walk(root):
+    for dirpath, dirnames, filenames in _walk(root, files):
         dirpath = Path(dirpath)
         rel_dir = _rel(root, dirpath)
         cls = classify_path(rel_dir)
@@ -243,10 +302,11 @@ def _scan_markers(root: Path) -> tuple[list[Marker], dict[str, LegacyClass]]:
                 child_cls = classify_path(child_rel)
                 if child_cls != "UNKNOWN":
                     hints[child_rel] = child_cls
-        dirnames[:] = [
-            d for d in dirnames
-            if d not in IGNORE_DIRS and not d.startswith(".")
-        ]
+        if files is None:
+            dirnames[:] = [
+                d for d in dirnames
+                if d not in IGNORE_DIRS and not d.startswith(".")
+            ]
         for name in filenames:
             if scanned >= MAX_MARKER_SCAN_FILES or len(markers) >= MAX_MARKER_HITS:
                 return markers, hints

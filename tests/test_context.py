@@ -24,6 +24,24 @@ def _init_repo(path):
     return path
 
 
+def test_context_ignores_gitignored_directories(tmp_path):
+    repo = _init_repo(tmp_path / "demo")
+    # a committed-but-gitignored fake virtualenv, like SEACOMMONS/oci-cli-env
+    (repo / ".gitignore").write_text("env-junk/\n", encoding="utf-8")
+    junk = repo / "env-junk" / "site-packages"
+    junk.mkdir(parents=True)
+    (junk / "setup.py").write_text("# TODO junk marker that must not surface\n", encoding="utf-8")
+    (junk / "tests").mkdir()
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "gitignore"], cwd=repo, check=True)
+
+    ctx = context.build_context(repo)
+    block = ctx.to_prompt_block(max_chars=8000)
+    assert "env-junk" not in block
+    assert not any("env-junk" in m.path for m in ctx.markers)
+    assert "env-junk/site-packages/tests" not in ctx.test_dirs
+
+
 def test_build_context_finds_the_basics(tmp_path):
     repo = _init_repo(tmp_path / "demo")
     ctx = context.build_context(repo)
