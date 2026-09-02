@@ -23,16 +23,19 @@ from pathlib import Path
 
 import click
 
-from orchestrator import engine, extensions
+from orchestrator import engine, extensions, policy
 from orchestrator.debugger import DEFAULT_MAX_DEBUG_ATTEMPTS
 from orchestrator.workers.base import Worker
+
+DEFAULT_VERIFICATION_TIMEOUT = 600
 
 
 def _builtin_workers() -> dict[str, type[Worker]]:
     from orchestrator.workers.claude import ClaudeWorker
     from orchestrator.workers.codex import CodexWorker
+    from orchestrator.workers.opencode import OpenCodeWorker
 
-    return {"codex": CodexWorker, "claude": ClaudeWorker}
+    return {"codex": CodexWorker, "claude": ClaudeWorker, "opencode": OpenCodeWorker}
 
 
 def _resolve_workers(names: tuple[str, ...]) -> list[Worker]:
@@ -94,20 +97,23 @@ def plan_cmd(repo: Path) -> None:
 @main.command()
 @click.argument("repo", type=click.Path(exists=True, file_okay=False, path_type=Path))
 @click.option("--prompt", default=None, help="Current request; omit to just execute existing READY tasks.")
-@click.option("--worker", "workers", multiple=True, default=("claude", "codex"), help="Implement workers, in assignment order.")
-@click.option("--max-debug-attempts", default=DEFAULT_MAX_DEBUG_ATTEMPTS, show_default=True)
-@click.option("--verification-timeout", default=600, show_default=True, help="Seconds per verification command.")
+@click.option("--worker", "workers", multiple=True, help="Implement workers, in assignment order. Overrides any private `workers` policy.")
+@click.option("--max-debug-attempts", type=int, default=None, help=f"Default {DEFAULT_MAX_DEBUG_ATTEMPTS} (or the private `max_debug_attempts` policy).")
+@click.option("--verification-timeout", type=int, default=None, help=f"Seconds per verification command. Default {DEFAULT_VERIFICATION_TIMEOUT}.")
 @click.option("--quiet", is_flag=True, help="Suppress live per-task progress; print only the final summary.")
-def run(repo: Path, prompt: str | None, workers: tuple[str, ...], max_debug_attempts: int, verification_timeout: int, quiet: bool) -> None:
+def run(repo: Path, prompt: str | None, workers: tuple[str, ...], max_debug_attempts: int | None, verification_timeout: int | None, quiet: bool) -> None:
     """ingest + plan + execution + verification in one pass (the daily entry point)."""
-    resolved = _resolve_workers(workers)
+    project = engine.load_or_create_plan(repo).meta.project
+    resolved = _resolve_workers(tuple(policy.effective_workers(project, tuple(workers))))
+    mda = policy.effective_int("max_debug_attempts", project, DEFAULT_MAX_DEBUG_ATTEMPTS, max_debug_attempts)
+    vt = policy.effective_int("verification_timeout_seconds", project, DEFAULT_VERIFICATION_TIMEOUT, verification_timeout)
     if not quiet:
         from orchestrator.progress import register_console_progress
 
         register_console_progress()
     result = engine.run(
         repo=repo, prompt_text=prompt, implement_workers=resolved,
-        max_debug_attempts=max_debug_attempts, verification_timeout=verification_timeout,
+        max_debug_attempts=mda, verification_timeout=vt,
     )
     for o in result.task_outcomes:
         click.echo(f"{o.task_id}: {o.status}  (debug attempts: {o.debug_attempts})")

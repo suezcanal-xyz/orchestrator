@@ -17,12 +17,9 @@ from orchestrator import extensions
 from orchestrator.workers.base import WorkerError, resolve_executable
 
 # CLI name -> whether a Worker ships for it in this repo today.
-BUILTIN_WORKER_NAMES = {"codex", "claude"}
+BUILTIN_WORKER_NAMES = {"codex", "claude", "opencode"}
 
-# CLIs orchestrator knows how to look for, even ones with no Worker yet.
-# opencode: real non-interactive contract exists (`opencode run --dir <path>
-# --format json --auto`) but is NOT YET wired as a Worker or live-verified
-# end-to-end in this repo -- see docs/DEVELOPMENT.md "Adding a worker".
+# CLIs orchestrator knows how to look for.
 KNOWN_CLIS = ("codex", "claude", "opencode")
 
 

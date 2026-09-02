@@ -270,13 +270,60 @@ def _scan_markers(root: Path) -> tuple[list[Marker], dict[str, LegacyClass]]:
     return markers, hints
 
 
-def focused_context(ctx: RepoContext, files_hint: list[str], max_chars_per_file: int = 2000) -> str:
+def _humanize_key(key: str) -> str:
+    return key.replace("_", " ").replace("-", " ").strip().title()
+
+
+def with_providers(ctx: RepoContext, repo_path: Path, *, max_chars: int = 4000, per_section_chars: int = 1500) -> str:
+    """The base context block plus any private context-provider output.
+
+    `orchestrator-private` registers functions via
+    `extensions.register_context_provider`; each is called with the repo
+    path and returns a dict (e.g. `{"private_notes": "..."}`). Every entry
+    becomes a bounded `## <Key>` markdown section appended after the base
+    map. With no providers registered this returns exactly
+    `ctx.to_prompt_block(max_chars=max_chars)`.
+    """
+    from orchestrator import extensions
+
+    base = ctx.to_prompt_block(max_chars=max_chars)
+    extra_sections: list[str] = []
+    for provider in extensions.context_providers():
+        try:
+            data = provider(repo_path)
+        except Exception:  # noqa: BLE001 -- a broken provider must not break a run
+            continue
+        if not isinstance(data, dict):
+            continue
+        for key, value in data.items():
+            text = str(value).strip()
+            if not text:
+                continue
+            extra_sections.append(f"## {_humanize_key(key)}\n{text[:per_section_chars]}")
+    if not extra_sections:
+        return base
+    return base + "\n\n" + "\n\n".join(extra_sections) + "\n"
+
+
+def focused_context(
+    ctx: RepoContext,
+    files_hint: list[str],
+    max_chars_per_file: int = 2000,
+    *,
+    char_budget: int | None = None,
+    repo_path: Path | None = None,
+) -> str:
     """Task-specific slice: the general map plus excerpts of hinted files/dirs only.
 
     This is what should actually be handed to a worker for a given task --
     never the raw context.to_prompt_block() alone and never the whole repo.
     """
-    lines = [ctx.to_prompt_block(max_chars=2500), "", "## Task-specific files", ""]
+    map_chars = char_budget if char_budget is not None else 2500
+    if repo_path is not None:
+        head = with_providers(ctx, repo_path, max_chars=map_chars)
+    else:
+        head = ctx.to_prompt_block(max_chars=map_chars)
+    lines = [head, "", "## Task-specific files", ""]
     for hint in files_hint:
         p = ctx.root / hint
         if p.is_file():

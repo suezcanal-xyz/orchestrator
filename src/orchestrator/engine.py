@@ -30,6 +30,7 @@ from orchestrator import evidence
 from orchestrator import extensions
 from orchestrator import git
 from orchestrator import plan as plan_mod
+from orchestrator import policy as policy_mod
 from orchestrator import reconcile as reconcile_mod
 from orchestrator import state
 from orchestrator.debugger import DEFAULT_MAX_DEBUG_ATTEMPTS, run_debug_loop
@@ -39,6 +40,10 @@ from orchestrator.verifier import VerificationResult, overall_passed, run_verifi
 from orchestrator.workers.base import Worker
 
 PLAN_PATH_REL = Path("docs") / "PLAN.md"
+
+# Character budget for the repo-map portion of a per-task context block.
+# Tunable per project via the `context_char_budget` policy (private layer).
+DEFAULT_CONTEXT_CHAR_BUDGET = 2500
 
 
 def plan_path(repo: Path) -> Path:
@@ -83,7 +88,7 @@ def ingest(repo: Path, prompt_text: str, worker: Worker) -> IngestResult:
         prompt_text=prompt_text,
         plan=doc,
         graph=graph,
-        context_block=ctx.to_prompt_block(),
+        context_block=context_mod.with_providers(ctx, repo),
         worker=worker,
     )
     doc.save(plan_path(repo))
@@ -260,12 +265,16 @@ def run(
     run_paths.plan_before.write_text(doc.render(), encoding="utf-8")
 
     ctx = context_mod.build_context(repo)
-    context_block = ctx.to_prompt_block()
+    project = doc.meta.project
+    char_budget = policy_mod.effective_int(
+        "context_char_budget", project, DEFAULT_CONTEXT_CHAR_BUDGET
+    )
+    run_wide_context = context_mod.with_providers(ctx, repo)
 
     if prompt_text:
         reconcile_result = reconcile_mod.reconcile(
             cwd=repo, prompt_text=prompt_text, plan=doc, graph=graph,
-            context_block=context_block, worker=implement_workers[0],
+            context_block=run_wide_context, worker=implement_workers[0],
         )
         extensions.run_hooks("reconcile_done", repo=repo, prompt=prompt_text, result=reconcile_result)
 
@@ -288,7 +297,9 @@ def run(
                     run_id=run_paths.run_id,
                     run_paths=run_paths,
                     task=task,
-                    context_block=context_block,
+                    context_block=context_mod.focused_context(
+                        ctx, task.files_hint, char_budget=char_budget, repo_path=repo
+                    ),
                     implement_worker=assignment[task.id],
                     debug_workers=[w for w in implement_workers if w is not assignment[task.id]] + (debug_workers or []),
                     max_debug_attempts=max_debug_attempts,

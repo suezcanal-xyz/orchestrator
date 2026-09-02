@@ -34,6 +34,8 @@ def test_worker_registered_reflects_extensions_registry():
     from orchestrator.doctor import _worker_registered
 
     assert _worker_registered("codex") is True  # builtin
+    assert _worker_registered("claude") is True  # builtin
+    assert _worker_registered("opencode") is True  # builtin since v0.2.0
     assert _worker_registered("totally-unknown-cli") is False
     extensions.register_worker("totally-unknown-cli", lambda: None)
     assert _worker_registered("totally-unknown-cli") is True

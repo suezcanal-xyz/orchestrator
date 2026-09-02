@@ -1,6 +1,6 @@
 import subprocess
 
-from orchestrator import context
+from orchestrator import context, extensions
 
 
 def _init_repo(path):
@@ -65,3 +65,36 @@ def test_prompt_block_is_bounded(tmp_path):
     ctx = context.build_context(repo)
     block = ctx.to_prompt_block(max_chars=500)
     assert len(block) <= 500
+
+
+def test_with_providers_unchanged_when_none_registered(tmp_path):
+    extensions.reset_extensions()
+    repo = _init_repo(tmp_path / "demo")
+    ctx = context.build_context(repo)
+    assert context.with_providers(ctx, repo) == ctx.to_prompt_block(max_chars=4000)
+
+
+def test_with_providers_appends_registered_section(tmp_path):
+    extensions.reset_extensions()
+    repo = _init_repo(tmp_path / "demo")
+    ctx = context.build_context(repo)
+    extensions.register_context_provider(lambda p: {"private_notes": "SAR invariants apply here"})
+    block = context.with_providers(ctx, repo)
+    assert "## Private Notes" in block
+    assert "SAR invariants apply here" in block
+    extensions.reset_extensions()
+
+
+def test_with_providers_survives_broken_provider(tmp_path):
+    extensions.reset_extensions()
+    repo = _init_repo(tmp_path / "demo")
+    ctx = context.build_context(repo)
+
+    def boom(_):
+        raise RuntimeError("nope")
+
+    extensions.register_context_provider(boom)
+    extensions.register_context_provider(lambda p: {"ok_key": "still here"})
+    block = context.with_providers(ctx, repo)
+    assert "## Ok Key" in block
+    extensions.reset_extensions()
