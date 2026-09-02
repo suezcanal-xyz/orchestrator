@@ -28,6 +28,8 @@ edit-mode Codex calls run with no sandbox at all with full disclosure.
 from __future__ import annotations
 
 import os
+import shutil
+import sys
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -90,6 +92,32 @@ def _safe_subprocess_env() -> dict[str, str]:
     env[f"GIT_CONFIG_VALUE_{prior_count}"] = ""
     env["GIT_CONFIG_COUNT"] = str(prior_count + 1)
     return env
+
+
+def resolve_executable(name: str) -> tuple[str, bool]:
+    """Resolve `name` on PATH and report whether it must be launched via a
+    shell.
+
+    On Windows, npm-installed CLIs (codex, claude) are typically `.cmd`
+    shims, not `.exe` binaries. `CreateProcess` cannot execute a `.cmd`
+    file directly (`subprocess.run([resolved_path, ...])` fails with
+    `WinError 2`, "cannot find the file specified", even though the file
+    exists) -- it has to go through `cmd.exe`, hence `shell=True` here.
+
+    Note this is *not* by itself safe for arbitrary argument content:
+    cmd.exe re-parses the whole joined command line with its own quoting
+    rules, which do not compose cleanly with Python's `list2cmdline`
+    (MSVCRT-style) escaping -- an argument containing double quotes can be
+    silently mangled. That is exactly why every worker here passes its
+    (multi-KB, quote-containing) prompt via stdin (`input=prompt`) rather
+    than as a positional argument: the only arguments that go through
+    `shell=True` are short flags and filesystem paths.
+    """
+    resolved = shutil.which(name)
+    if resolved is None:
+        raise WorkerError(f"{name!r} not found on PATH")
+    use_shell = sys.platform == "win32" and resolved.lower().endswith((".cmd", ".bat"))
+    return resolved, use_shell
 
 
 class Worker(ABC):

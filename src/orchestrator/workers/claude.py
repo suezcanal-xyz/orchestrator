@@ -7,7 +7,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from orchestrator.workers.base import Worker, WorkerResponse, _safe_subprocess_env
+from orchestrator.workers.base import Worker, WorkerResponse, _safe_subprocess_env, resolve_executable
 
 
 class ClaudeWorker(Worker):
@@ -26,19 +26,23 @@ class ClaudeWorker(Worker):
         structured: bool = False,
     ) -> WorkerResponse:
         tools = "Bash Edit Write Read Grep Glob" if allow_edit else "Read Grep Glob Bash"
+        exe, use_shell = resolve_executable(self.executable)
         permission_mode = "bypassPermissions"
 
         args = [
-            self.executable, "-p",
+            exe, "-p",
             "--permission-mode", permission_mode,
             "--allowedTools", tools,
             "--output-format", "json",
-            prompt,
+            # no positional prompt: piped via stdin instead, below -- avoids
+            # Windows cmd.exe command-line length/quoting limits on a
+            # multi-KB prompt
         ]
         start = time.monotonic()
         try:
             proc = subprocess.run(
                 args,
+                input=prompt,
                 cwd=str(cwd),
                 capture_output=True,
                 text=True,
@@ -46,6 +50,7 @@ class ClaudeWorker(Worker):
                 errors="replace",
                 env=_safe_subprocess_env(),
                 timeout=timeout,
+                shell=use_shell,
             )
         except subprocess.TimeoutExpired as e:
             return WorkerResponse(

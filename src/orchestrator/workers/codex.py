@@ -7,7 +7,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from orchestrator.workers.base import Worker, WorkerResponse, _safe_subprocess_env
+from orchestrator.workers.base import Worker, WorkerResponse, _safe_subprocess_env, resolve_executable
 
 
 class CodexWorker(Worker):
@@ -26,27 +26,31 @@ class CodexWorker(Worker):
         structured: bool = False,
     ) -> WorkerResponse:
         sandbox_mode = "danger-full-access" if allow_edit else "read-only"
+        exe, use_shell = resolve_executable(self.executable)
 
         with tempfile.TemporaryDirectory() as td:
             last_msg_path = Path(td) / "last_message.txt"
             args = [
-                self.executable, "exec",
+                exe, "exec",
                 "-C", str(cwd),
                 "-s", sandbox_mode,
                 "--color", "never",
                 "-o", str(last_msg_path),
-                prompt,
+                "-",  # read the prompt from stdin: avoids Windows cmd.exe
+                      # command-line length/quoting limits on a multi-KB prompt
             ]
             start = time.monotonic()
             try:
                 proc = subprocess.run(
                     args,
+                    input=prompt,
                     capture_output=True,
                     text=True,
                     encoding="utf-8",
                     errors="replace",
                     env=_safe_subprocess_env(),
                     timeout=timeout,
+                    shell=use_shell,
                 )
             except subprocess.TimeoutExpired as e:
                 return WorkerResponse(
