@@ -448,6 +448,22 @@ def test_run_resume_continues_from_the_task_store_and_links_the_prior_run(tmp_pa
     assert r2.run_paths.run_id != run1_id
 
 
+def test_run_warns_about_tasks_that_touch_the_same_file(tmp_path):
+    from orchestrator import extensions
+
+    repo = init_repo(tmp_path / "ov")
+    state.save_task_store(repo, TaskGraph([
+        Task(id="OV-1", title="a", status="READY", verification=['python -c "pass"'], files_hint=["./m.py"]),
+        Task(id="OV-2", title="b", status="READY", verification=['python -c "pass"'], files_hint=["m.py"]),
+    ]))
+    seen = []
+    extensions.register_hook("possible_overlap",
+                             lambda **kw: seen.append((kw["task_a"], kw["task_b"], kw["path"])))
+
+    engine.run(repo=repo, prompt_text=None, implement_workers=[ScriptedWorker("claude", {})])
+    assert ("OV-1", "OV-2", "m.py") in seen
+
+
 def test_task_that_never_gets_fixed_is_blocked(demo_repo):
     repo = demo_repo
     graph = TaskGraph(

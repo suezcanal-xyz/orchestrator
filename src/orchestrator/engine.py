@@ -439,6 +439,12 @@ def run(
     ordered_tasks = [t for batch in batches for t in batch]
     assignment = _assign_workers(ordered_tasks, implement_workers)
 
+    # ORCH-009: these pairs are serialised into different batches, but they
+    # touch the same file, so their branches still collide at integration
+    # -- surface that before doing the work.
+    for a, b, path in graph.likely_overlaps(ordered_tasks):
+        extensions.run_hooks("possible_overlap", task_a=a, task_b=b, path=path)
+
     extensions.run_hooks(
         "run_started", repo=repo, run_id=run_paths.run_id, prompt=prompt_text,
         task_ids=[t.id for t in ordered_tasks], batch_count=len(batches),
