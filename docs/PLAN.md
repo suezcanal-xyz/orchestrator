@@ -116,7 +116,7 @@ _Regenerated automatically by the orchestrator from
 |---|---|---|---|---|
 | ORCH-001 | Per-project `work_branch`: runs pick the base branch from config, not a flag | DONE | P1 | - |
 | ORCH-002 | Scoped-run verdict: distinguish "task failed" from "milestone incomplete" | DONE | P1 | - |
-| ORCH-003 | Loud warning + recorded note when milestone acceptance criteria are undefined | READY | P2 | - |
+| ORCH-003 | Loud warning + recorded note when milestone acceptance criteria are undefined | DONE | P2 | - |
 | ORCH-004 | Honest Codex cost display: never a misleading `$0.0000` for real work | READY | P2 | - |
 | ORCH-005 | Private context provider follows the doc pointers in a project's NOTES.md | READY | P2 | - |
 | ORCH-006 | Explicit milestone gate: `## Verification Commands` run once, can block READY | READY | P2 | ORCH-003 |
@@ -218,6 +218,15 @@ None.
 - Any autonomous merge / deploy -- out of scope indefinitely (spec §19).
 
 ## Change History
+
+### 2026-09-03 -- ORCH-003 DONE
+
+`build_verdict` on a plan with an empty `## Acceptance Criteria` /
+`## Verification Commands` now sets `verdict.notes` saying the judgement
+is task-status-only (and a separate note when the two lists exist but
+don't line up 1:1). `engine.ingest` records a one-time `## Blockers`
+line ("Milestone acceptance not defined ...") and clears it once the
+sections are filled in.
 
 ### 2026-09-03 -- ORCH-002 DONE
 
