@@ -118,6 +118,7 @@ at a repository that matters.
 
 ## Docs
 
+- `docs/PLAN.md` -- the orchestrator's own plan (it now manages itself); v0.3 is "senior pipeline readiness"
 - `docs/FAILURE-MODES.md` -- the twelve failure modes and what catches each
 - `docs/ONBOARDING.md` -- dashboard and CLI first-run
 - `docs/TEAM.md` -- how a team shares one workflow
