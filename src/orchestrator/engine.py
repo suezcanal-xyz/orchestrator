@@ -347,6 +347,7 @@ def run(
     verification_timeout: int = 600,
     base_ref: str | None = None,
     only_task_ids: set[str] | None = None,
+    resume_from: str | None = None,
 ) -> RunResult:
     """ingest + plan + execution + verification in one pass (spec section 16).
 
@@ -358,6 +359,11 @@ def run(
     `only_task_ids`: run just these task ids (and skip the rest of READY).
     A selected task whose dependency is not also selected is skipped with
     a BLOCKED-style note rather than run against an unmet dependency.
+
+    `resume_from`: a prior run id under `.orchestrator/runs/`. Continues
+    from the task store's current state (DONE tasks stay DONE), does NOT
+    reconcile (`prompt_text` is ignored), and carries the prior run's
+    `plan-before.md` forward. Use it after a `BLOCKED_SESSION_LIMIT` run.
     """
     if not implement_workers:
         raise ValueError("run() requires at least one implement worker")
@@ -366,9 +372,22 @@ def run(
     run_paths = state.init_run(repo)
     started_at = state.now_iso()
 
+    prior_plan_before: Path | None = None
+    if resume_from is not None:
+        prior_root = state.orch_dir(repo) / "runs" / resume_from
+        if not prior_root.is_dir():
+            raise ValueError(f"no run {resume_from!r} under {prior_root.parent}")
+        prompt_text = None  # resuming, not a new request -- do not reconcile
+        pb = prior_root / "plan-before.md"
+        if pb.is_file():
+            prior_plan_before = pb
+
     doc = load_or_create_plan(repo)
     graph = state.load_task_store(repo)
-    run_paths.plan_before.write_text(doc.render(), encoding="utf-8")
+    if prior_plan_before is not None:
+        run_paths.plan_before.write_text(prior_plan_before.read_text(encoding="utf-8"), encoding="utf-8")
+    else:
+        run_paths.plan_before.write_text(doc.render(), encoding="utf-8")
 
     ctx = context_mod.build_context(repo)
     project = doc.meta.project
@@ -547,6 +566,8 @@ def run(
     manifest_notes = "reconcile found nothing to do" if nothing_to_do else ""
     if session_limit is not None:
         manifest_notes = f"paused: agent session/usage limit (resets {session_limit})"
+    if resume_from is not None:
+        manifest_notes = (manifest_notes + "  " if manifest_notes else "") + f"resumed from run {resume_from}"
     manifest = state.RunManifest(
         run_id=run_paths.run_id,
         repo=str(repo),
@@ -558,6 +579,7 @@ def run(
         active_milestone=doc.meta.active_milestone,
         task_ids=[o.task_id for o in outcomes],
         notes=manifest_notes,
+        resumed_from=resume_from,
     )
     manifest.save(run_paths)
     result.manifest = manifest

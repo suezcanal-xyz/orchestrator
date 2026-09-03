@@ -134,6 +134,7 @@ class RunManifest:
     active_milestone: str | None = None
     task_ids: list[str] | None = None
     notes: str = ""
+    resumed_from: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -147,6 +148,7 @@ class RunManifest:
             "task_ids": self.task_ids or [],
             "protected_branch": self.protected_branch,
             "notes": self.notes,
+            "resumed_from": self.resumed_from,
         }
 
     def save(self, run_paths: RunPaths) -> None:
@@ -168,6 +170,7 @@ class RunManifest:
             active_milestone=data.get("active_milestone"),
             task_ids=data.get("task_ids", []),
             notes=data.get("notes", ""),
+            resumed_from=data.get("resumed_from"),
         )
 
 
