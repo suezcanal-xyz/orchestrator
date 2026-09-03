@@ -133,6 +133,7 @@ def execute_task(
     debug_workers: list[Worker],
     max_debug_attempts: int = DEFAULT_MAX_DEBUG_ATTEMPTS,
     verification_timeout: int = 600,
+    base_ref: str | None = None,
 ) -> TaskOutcome:
     """Implement one task in its own worktree, verify it, debug on failure.
 
@@ -149,17 +150,21 @@ def execute_task(
     functions must be safe to call from multiple threads concurrently.
     """
     task.status = "IN_PROGRESS"
-    wt = git.create_worktree(repo, run_id, task.id)
+    wt = git.create_worktree(repo, run_id, task.id, base_ref=base_ref)
     task.assigned_worktree = str(wt.path)
     task.worker = implement_worker.name
-    protected = git.default_branch(repo)
+    # Diffs are measured against the branch the work was based on -- the
+    # WIP feature branch when --base was given, otherwise the default
+    # branch. (The task branch is namespaced `orchestrator/<run>/<task>`
+    # and create_worktree already refuses to operate on a protected one.)
+    diff_base = base_ref or git.default_branch(repo)
     extensions.run_hooks("task_started", task=task, worker=implement_worker.name)
 
     response = implement_worker.implement(wt.path, task, context_block)
     evidence.save_worker_response(run_paths, task.id, "implement", response)
 
     commit = git.commit_all(wt.path, f"{task.id}: {task.title}\n\nImplemented by {implement_worker.name}.")
-    evidence.save_diff(run_paths, task.id, git.diff(wt.path, base_ref=protected))
+    evidence.save_diff(run_paths, task.id, git.diff(wt.path, base_ref=diff_base))
     extensions.run_hooks("task_implemented", task=task, worker=implement_worker.name, response=response, commit=commit)
 
     results = run_verification(
@@ -181,7 +186,7 @@ def execute_task(
             run_verification_fn=lambda: run_verification(
                 task.verification, wt.path, timeout_per_command=verification_timeout, worker="debug"
             ),
-            get_diff_fn=lambda: git.diff(wt.path, base_ref=protected),
+            get_diff_fn=lambda: git.diff(wt.path, base_ref=diff_base),
             commit_fn=lambda msg: git.commit_all(wt.path, msg),
             max_attempts=max_debug_attempts,
             on_attempt=lambda record: extensions.run_hooks("task_debug_attempt", task=task, record=record),
@@ -192,7 +197,7 @@ def execute_task(
         debug_attempts = len(outcome.attempts)
         results = outcome.final_results
         commit = git.head_commit(wt.path)
-        evidence.save_diff(run_paths, task.id, git.diff(wt.path, base_ref=protected))
+        evidence.save_diff(run_paths, task.id, git.diff(wt.path, base_ref=diff_base))
         if outcome.status != "FIXED":
             task.status = "BLOCKED"
             task.attempts += 1
@@ -254,8 +259,20 @@ def run(
     debug_workers: list[Worker] | None = None,
     max_debug_attempts: int = DEFAULT_MAX_DEBUG_ATTEMPTS,
     verification_timeout: int = 600,
+    base_ref: str | None = None,
+    only_task_ids: set[str] | None = None,
 ) -> RunResult:
-    """ingest + plan + execution + verification in one pass (spec section 16)."""
+    """ingest + plan + execution + verification in one pass (spec section 16).
+
+    `base_ref`: branch/ref every task worktree (and the integration
+    worktree for the verdict) is created from. Defaults to the repo's
+    detected default branch; pass a WIP feature branch to work tasks whose
+    context only exists there. The protected branch is still never touched.
+
+    `only_task_ids`: run just these task ids (and skip the rest of READY).
+    A selected task whose dependency is not also selected is skipped with
+    a BLOCKED-style note rather than run against an unmet dependency.
+    """
     if not implement_workers:
         raise ValueError("run() requires at least one implement worker")
 
@@ -286,6 +303,17 @@ def run(
         extensions.run_hooks("reconcile_done", repo=repo, prompt=prompt_text, result=reconcile_result)
 
     batches = graph.parallelizable_batches()
+    if only_task_ids is not None:
+        runnable = {t.id for b in batches for t in b}
+        not_runnable = only_task_ids - runnable
+        if not_runnable:
+            raise ValueError(
+                f"--task named {sorted(not_runnable)}, which is not runnable now "
+                f"(runnable READY tasks: {sorted(runnable) or 'none'}). A task is not "
+                f"runnable if it is not READY or if a dependency is still pending."
+            )
+        batches = [[t for t in batch if t.id in only_task_ids] for batch in batches]
+        batches = [b for b in batches if b]
     ordered_tasks = [t for batch in batches for t in batch]
     assignment = _assign_workers(ordered_tasks, implement_workers)
 
@@ -311,6 +339,7 @@ def run(
                     debug_workers=[w for w in implement_workers if w is not assignment[task.id]] + (debug_workers or []),
                     max_debug_attempts=max_debug_attempts,
                     verification_timeout=verification_timeout,
+                    base_ref=base_ref,
                 ): task
                 for task in batch
             }
@@ -338,7 +367,9 @@ def run(
     integration_conflicts: list[str] = []
     if done_branches:
         try:
-            integ = git.create_integration_worktree(repo, run_paths.run_id, done_branches)
+            integ = git.create_integration_worktree(
+                repo, run_paths.run_id, done_branches, base_ref=base_ref
+            )
             verify_root = integ.worktree.path
             integration_conflicts = integ.conflicted
         except git.GitError:

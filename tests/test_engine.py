@@ -5,6 +5,7 @@ live version against real `codex exec` / `claude -p` is a separate,
 explicitly-invoked test (test_integration_v0_1_0_live.py)."""
 
 import re
+import subprocess
 
 import pytest
 
@@ -189,6 +190,79 @@ def test_verdict_checks_integrated_task_work_not_the_untouched_base(tmp_path):
     assert result.verdict.result_status.value == "READY_FOR_REVIEW"
     # base branch itself was never modified
     assert (repo / "op.py").read_text(encoding="utf-8") == "def op():\n    return 0\n"
+
+
+def test_run_only_task_ids_executes_just_the_selected_task(tmp_path):
+    repo = init_repo(tmp_path / "sel", files={
+        "a.py": "x = 0\n", "b.py": "x = 0\n",
+        "tests/test_a.py": "from a import x\n\ndef test_a():\n    assert x == 1\n",
+        "tests/test_b.py": "from b import x\n\ndef test_b():\n    assert x == 1\n",
+    })
+    state.save_task_store(repo, TaskGraph([
+        Task(id="T-A", title="fix a", status="READY", acceptance=["x==1"],
+             verification=["python -m pytest tests/test_a.py -q"], files_hint=["a.py"]),
+        Task(id="T-B", title="fix b", status="READY", acceptance=["x==1"],
+             verification=["python -m pytest tests/test_b.py -q"], files_hint=["b.py"]),
+    ]))
+    w = ScriptedWorker("claude", {
+        ("T-A", "implement"): lambda cwd: (cwd / "a.py").write_text("x = 1\n", encoding="utf-8"),
+        ("T-B", "implement"): lambda cwd: (cwd / "b.py").write_text("x = 1\n", encoding="utf-8"),
+    })
+    result = engine.run(repo=repo, prompt_text=None, implement_workers=[w], only_task_ids={"T-A"})
+    assert [o.task_id for o in result.task_outcomes] == ["T-A"]
+    assert ("T-B", "implement") not in w.calls
+
+
+def test_run_only_task_ids_rejects_an_unknown_or_dependency_gap(tmp_path):
+    repo = init_repo(tmp_path / "sel2", files={
+        "tests/test_x.py": "def test_x():\n    assert True\n",
+    })
+    state.save_task_store(repo, TaskGraph([
+        Task(id="P-1", title="p1", status="READY", verification=["python -m pytest tests/test_x.py -q"]),
+        Task(id="P-2", title="p2", status="READY", depends_on=["P-1"],
+             verification=["python -m pytest tests/test_x.py -q"]),
+    ]))
+    w = ScriptedWorker("claude", {})
+    with pytest.raises(ValueError, match="not runnable"):
+        engine.run(repo=repo, prompt_text=None, implement_workers=[w], only_task_ids={"NOPE"})
+    with pytest.raises(ValueError, match="not runnable"):  # P-2's dependency P-1 is still pending
+        engine.run(repo=repo, prompt_text=None, implement_workers=[w], only_task_ids={"P-2"})
+
+
+def test_run_base_ref_bases_worktrees_on_a_feature_branch(tmp_path):
+    """A task whose verification needs a file that exists only on a WIP
+    branch must be worked from that branch, not the default branch."""
+    repo = init_repo(tmp_path / "wip", files={"base.txt": "on main\n"})
+    subprocess.run(["git", "checkout", "-q", "-b", "feat/wip"], cwd=repo, check=True)
+    (repo / "only_on_feat.py").write_text("VALUE = 0\n", encoding="utf-8")
+    (repo / "tests").mkdir(exist_ok=True)
+    (repo / "tests" / "test_feat.py").write_text(
+        "from only_on_feat import VALUE\n\ndef test_v():\n    assert VALUE == 42\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "wip work"], cwd=repo, check=True)
+    subprocess.run(["git", "checkout", "-q", "main"], cwd=repo, check=True)  # default branch is behind
+
+    state.save_task_store(repo, TaskGraph([
+        Task(id="W-1", title="set VALUE", status="READY", acceptance=["VALUE==42"],
+             verification=["python -m pytest tests/test_feat.py -q"], files_hint=["only_on_feat.py"]),
+    ]))
+    w = ScriptedWorker("claude", {
+        ("W-1", "implement"): lambda cwd: (cwd / "only_on_feat.py").write_text("VALUE = 42\n", encoding="utf-8"),
+    })
+
+    # without --base: worktree off main, file absent -> BLOCKED
+    r_main = engine.run(repo=repo, prompt_text=None, implement_workers=[w], only_task_ids={"W-1"})
+    assert r_main.task_outcomes[0].status == "BLOCKED"
+
+    state.save_task_store(repo, TaskGraph([
+        Task(id="W-1", title="set VALUE", status="READY", acceptance=["VALUE==42"],
+             verification=["python -m pytest tests/test_feat.py -q"], files_hint=["only_on_feat.py"]),
+    ]))
+    r_feat = engine.run(repo=repo, prompt_text=None, implement_workers=[w],
+                        only_task_ids={"W-1"}, base_ref="feat/wip")
+    assert r_feat.task_outcomes[0].status == "DONE"
+    assert r_feat.verdict.result_status.value == "READY_FOR_REVIEW"
+    assert git.current_branch(repo) == "main"  # protected branch untouched
 
 
 def test_task_that_never_gets_fixed_is_blocked(demo_repo):
