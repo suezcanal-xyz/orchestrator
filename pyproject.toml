@@ -8,7 +8,7 @@ build-backend = "hatchling.build"
 # below): `pip install suez-orchestrator` then `import orchestrator` /
 # `orchestrator run ...` on the CLI, same as always.
 name = "suez-orchestrator"
-version = "0.1.0"
+version = "0.3.0"
 description = "Milestone-driven multi-agent development control plane"
 readme = "README.md"
 license = { text = "MIT" }
