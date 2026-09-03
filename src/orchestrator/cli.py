@@ -23,16 +23,19 @@ from pathlib import Path
 
 import click
 
-from orchestrator import engine, extensions
+from orchestrator import engine, extensions, policy
 from orchestrator.debugger import DEFAULT_MAX_DEBUG_ATTEMPTS
 from orchestrator.workers.base import Worker
+
+DEFAULT_VERIFICATION_TIMEOUT = 600
 
 
 def _builtin_workers() -> dict[str, type[Worker]]:
     from orchestrator.workers.claude import ClaudeWorker
     from orchestrator.workers.codex import CodexWorker
+    from orchestrator.workers.opencode import OpenCodeWorker
 
-    return {"codex": CodexWorker, "claude": ClaudeWorker}
+    return {"codex": CodexWorker, "claude": ClaudeWorker, "opencode": OpenCodeWorker}
 
 
 def _resolve_workers(names: tuple[str, ...]) -> list[Worker]:
@@ -81,6 +84,22 @@ def ingest(repo: Path, prompt: str, worker: str) -> None:
     click.echo(f"docs/PLAN.md updated: {engine.plan_path(repo)}")
 
 
+@main.command()
+@click.argument("repo", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.option("--project", default=None, help="Project name for the new PLAN.md (default: repo directory name).")
+def init(repo: Path, project: str | None) -> None:
+    """Scaffold docs/PLAN.md + AGENTS.md in REPO (never overwrites)."""
+    from orchestrator.scaffold import scaffold_repo
+
+    result = scaffold_repo(repo, project)
+    for f in result.created:
+        click.echo(f"created  {f}")
+    for f in result.skipped:
+        click.echo(f"skipped  {f} (already exists)")
+    if result.created:
+        click.echo("\nEdit docs/PLAN.md (## Requirements, ## Acceptance Criteria, ## Verification Commands), then `orchestrator run`.")
+
+
 @main.command(name="plan")
 @click.argument("repo", type=click.Path(exists=True, file_okay=False, path_type=Path))
 def plan_cmd(repo: Path) -> None:
@@ -94,24 +113,31 @@ def plan_cmd(repo: Path) -> None:
 @main.command()
 @click.argument("repo", type=click.Path(exists=True, file_okay=False, path_type=Path))
 @click.option("--prompt", default=None, help="Current request; omit to just execute existing READY tasks.")
-@click.option("--worker", "workers", multiple=True, default=("claude", "codex"), help="Implement workers, in assignment order.")
-@click.option("--max-debug-attempts", default=DEFAULT_MAX_DEBUG_ATTEMPTS, show_default=True)
-@click.option("--verification-timeout", default=600, show_default=True, help="Seconds per verification command.")
+@click.option("--worker", "workers", multiple=True, help="Implement workers, in assignment order. Overrides any private `workers` policy.")
+@click.option("--max-debug-attempts", type=int, default=None, help=f"Default {DEFAULT_MAX_DEBUG_ATTEMPTS} (or the private `max_debug_attempts` policy).")
+@click.option("--verification-timeout", type=int, default=None, help=f"Seconds per verification command. Default {DEFAULT_VERIFICATION_TIMEOUT}.")
 @click.option("--quiet", is_flag=True, help="Suppress live per-task progress; print only the final summary.")
-def run(repo: Path, prompt: str | None, workers: tuple[str, ...], max_debug_attempts: int, verification_timeout: int, quiet: bool) -> None:
+def run(repo: Path, prompt: str | None, workers: tuple[str, ...], max_debug_attempts: int | None, verification_timeout: int | None, quiet: bool) -> None:
     """ingest + plan + execution + verification in one pass (the daily entry point)."""
-    resolved = _resolve_workers(workers)
+    project = engine.load_or_create_plan(repo).meta.project
+    resolved = _resolve_workers(tuple(policy.effective_workers(project, tuple(workers))))
+    mda = policy.effective_int("max_debug_attempts", project, DEFAULT_MAX_DEBUG_ATTEMPTS, max_debug_attempts)
+    vt = policy.effective_int("verification_timeout_seconds", project, DEFAULT_VERIFICATION_TIMEOUT, verification_timeout)
     if not quiet:
         from orchestrator.progress import register_console_progress
 
         register_console_progress()
     result = engine.run(
         repo=repo, prompt_text=prompt, implement_workers=resolved,
-        max_debug_attempts=max_debug_attempts, verification_timeout=verification_timeout,
+        max_debug_attempts=mda, verification_timeout=vt,
     )
     for o in result.task_outcomes:
         click.echo(f"{o.task_id}: {o.status}  (debug attempts: {o.debug_attempts})")
     click.echo("")
+    if result.nothing_to_do:
+        click.echo("NO WORK -- reconcile found the request already satisfied and no pending tasks.")
+        click.echo(f"run: {result.run_paths.root}")
+        return
     click.echo(result.verdict.render())
     click.echo(f"run: {result.run_paths.root}")
     if result.verdict.result_status.value != "READY_FOR_REVIEW":
@@ -150,6 +176,30 @@ def status(repo: Path, as_json: bool) -> None:
     click.echo(f"tasks:            {s['total_tasks']} total")
     for k, v in sorted(s["tasks_by_status"].items()):
         click.echo(f"  {k}: {v}")
+
+
+@main.command()
+@click.option("--port", default=8765, show_default=True)
+@click.option("--host", default="127.0.0.1", show_default=True, help="Keep this localhost-only.")
+@click.option("--no-open", is_flag=True, help="Do not open a browser tab.")
+def onboarding(port: int, host: str, no_open: bool) -> None:
+    """Open the local onboarding dashboard (needs the `dashboard` extra)."""
+    try:
+        import uvicorn
+
+        from orchestrator.dashboard import create_app
+    except ModuleNotFoundError as e:
+        raise click.ClickException(
+            f"the dashboard needs extra dependencies ({e.name}). "
+            'Install with: pip install "suez-orchestrator[dashboard]"'
+        )
+    if not no_open:
+        import threading
+        import webbrowser
+
+        threading.Timer(1.0, lambda: webbrowser.open(f"http://{host}:{port}/")).start()
+    click.echo(f"orchestrator onboarding -> http://{host}:{port}/  (Ctrl+C to stop)")
+    uvicorn.run(create_app(), host=host, port=port, log_level="warning")
 
 
 @main.command()

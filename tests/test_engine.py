@@ -26,12 +26,14 @@ class ScriptedWorker(Worker):
         self.name = name
         self._actions = actions
         self.calls: list[tuple[str, str]] = []
+        self.prompts: list[str] = []
 
     def _invoke(self, cwd, prompt, *, timeout, allow_edit, structured=False):
         m = re.search(r"# (Debug task|Task) ([A-Z]+-\d+)", prompt)
         stage = "debug" if m and m.group(1) == "Debug task" else "implement"
         task_id = m.group(2) if m else "?"
         self.calls.append((task_id, stage))
+        self.prompts.append(prompt)
         action = self._actions.get((task_id, stage))
         if action:
             action(cwd)
@@ -137,6 +139,16 @@ def test_closed_loop_happy_path_and_cross_model_debug(demo_repo):
     assert (result.run_paths.diffs_dir / "TEST-002.diff").exists()
     assert (result.run_paths.evidence_dir / "TEST-002.debug-1.json").exists()
 
+    # per-task focused context: TEST-001's implement prompt names its own
+    # hinted file, not the other task's
+    impl_prompt = next(p for p, (tid, st) in zip(claude.prompts, claude.calls) if tid == "TEST-001")
+    assert "add_mod.py" in impl_prompt
+
+    # cost accounting: VERDICT has a Cost section and RunResult carries the summary
+    assert "## Cost" in result.run_paths.verdict.read_text(encoding="utf-8")
+    assert "totals" in result.usage
+    assert (result.run_paths.root / "usage.json").exists()
+
 
 def test_task_that_never_gets_fixed_is_blocked(demo_repo):
     repo = demo_repo
@@ -165,6 +177,45 @@ def test_task_that_never_gets_fixed_is_blocked(demo_repo):
     assert outcome.debug_attempts == 2
     assert "exhausted 2 debug attempts" in outcome.reason
     assert result.plan.meta.status.value == "BLOCKED"
+
+
+class ReconcileOnlyWorker(Worker):
+    """Returns a valid reconcile JSON with zero tasks -- the 'request already
+    satisfied' case."""
+
+    name = "recon"
+
+    def __init__(self, tasks_json="[]"):
+        self._tasks_json = tasks_json
+
+    def _invoke(self, cwd, prompt, *, timeout, allow_edit, structured=False):
+        payload = (
+            '{"classification": "NEW_REQUIREMENT", '
+            '"change_history_entry": "Already done.", '
+            f'"tasks": {self._tasks_json}}}'
+        )
+        return WorkerResponse(
+            ok=True, summary=payload, raw_output=payload, duration_seconds=0.02,
+            worker=self.name, cost_usd=0.003,
+            extra={"usage": {"input_tokens": 4000, "output_tokens": 120, "cache_read_tokens": 0}},
+        )
+
+
+def test_run_with_nothing_to_do_is_not_blocked(demo_repo):
+    repo = demo_repo
+    result = engine.run(
+        repo=repo, prompt_text="please do the thing that is already done",
+        implement_workers=[ReconcileOnlyWorker()],
+    )
+    assert result.nothing_to_do is True
+    assert result.task_outcomes == []
+    assert result.manifest.status == "NO_WORK"
+    assert result.plan.meta.status.value != "BLOCKED"
+    # reconcile call is now persisted as evidence and shows up in the cost total
+    assert (result.run_paths.evidence_dir / "reconcile.reconcile.json").exists()
+    assert result.usage["totals"]["cost_usd"] == 0.003
+    assert result.usage["by_stage"]["reconcile"]["input_tokens"] == 4000
+    assert "NO WORK" in result.run_paths.verdict.read_text(encoding="utf-8")
 
 
 def test_status_reports_without_executing(demo_repo):

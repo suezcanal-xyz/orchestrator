@@ -2,12 +2,25 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 import tempfile
 import time
 from pathlib import Path
 
 from orchestrator.workers.base import Worker, WorkerResponse, _safe_subprocess_env, resolve_executable
+
+_TOKENS_RE = re.compile(r"tokens used[:\s]+([\d,]+)", re.IGNORECASE)
+
+
+def _best_effort_usage(raw: str) -> dict:
+    m = _TOKENS_RE.search(raw)
+    if not m:
+        return {}
+    total = int(m.group(1).replace(",", ""))
+    # codex reports a single total; attribute it to output for a conservative
+    # non-zero signal rather than guessing a split.
+    return {"input_tokens": 0, "output_tokens": total, "cache_read_tokens": 0}
 
 
 class CodexWorker(Worker):
@@ -67,6 +80,7 @@ class CodexWorker(Worker):
                 summary = last_msg_path.read_text(encoding="utf-8", errors="replace").strip()
             raw = proc.stdout + (("\n" + proc.stderr) if proc.stderr else "")
             ok = proc.returncode == 0
+            usage = _best_effort_usage(raw)
             return WorkerResponse(
                 ok=ok,
                 summary=summary or (raw[-2000:] if not ok else ""),
@@ -74,4 +88,5 @@ class CodexWorker(Worker):
                 duration_seconds=duration,
                 worker=self.name,
                 error=None if ok else f"codex exec exited {proc.returncode}",
+                extra={"usage": usage} if usage else {},
             )

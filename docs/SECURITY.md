@@ -77,6 +77,21 @@ allowlist. In principle a read-only call could still shell out to write a
 file. A stricter split (e.g. `--restricted` plus an explicit safe-command
 allowlist) is a candidate for a later milestone, not implemented in v0.
 
+**opencode read-only calls rely on the prompt, not a flag.**
+`workers/opencode.py` omits `--auto` for review/inspect/propose_tasks
+calls, so opencode falls back to its own permission behaviour with the
+BOUNDARIES prompt telling it not to edit. There is no verified
+CLI-enforced read-only mode wired here; treat an opencode read-only call
+as "asked nicely", same class of gap as the Claude Bash note above.
+
+**The onboarding dashboard has no auth.** `orchestrator onboarding` binds
+`127.0.0.1` and is single-user by design. Anything that can reach that
+port can trigger a run, scaffold files, and spawn a login command. Do not
+bind it to `0.0.0.0`, port-forward it, or run it on a shared host. The
+`/api/login/{worker}` route spawns a fixed command (`codex login`, etc.)
+with no shell and no user-supplied arguments; it never receives or stores
+a credential (the worker CLI's own OAuth flow does).
+
 **`AGENTS.md`/`CLAUDE.md` in a target repo are read, not trusted.**
 `context.py` includes their content in the context block handed to a
 worker, but the orchestrator does not execute anything they say and does
