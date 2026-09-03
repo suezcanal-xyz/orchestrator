@@ -38,6 +38,31 @@ def test_login_endpoint_is_nonblocking_and_validates(client):
     assert client.post("/api/login/bogus").status_code == 400
 
 
+def test_login_resolves_cli_and_reports_missing_one_as_json(monkeypatch):
+    """`_spawn_login` must resolve the CLI on PATH (Windows ships `.cmd`
+    shims that need a shell); a CLI that is not installed comes back as a
+    JSON 502, not a 500 HTML page."""
+    import orchestrator.dashboard.app as appmod
+    import orchestrator.workers.base as base
+    from orchestrator.workers.base import WorkerError
+
+    calls = []
+    monkeypatch.setattr(appmod.subprocess, "Popen", lambda *a, **k: calls.append((a, k)))
+    monkeypatch.setattr(base, "resolve_executable", lambda name: (f"/opt/{name}", False))
+    c = TestClient(appmod.create_app())
+    assert c.post("/api/login/codex").status_code == 200
+    assert calls and calls[0][0][0] == ["/opt/codex", "login"]
+
+    monkeypatch.setattr(base, "resolve_executable", lambda name: (_ for _ in ()).throw(WorkerError("x")))
+    r = c.post("/api/login/opencode")
+    assert r.status_code == 502
+    assert "opencode" in r.json()["detail"]
+
+
+def test_favicon_is_served(client):
+    assert client.get("/favicon.ico").status_code == 200
+
+
 def test_repo_and_init_roundtrip(client, tmp_path):
     repo = init_repo(tmp_path / "demo")
     r = client.post("/api/repo", json={"path": str(repo)})
