@@ -72,8 +72,14 @@ def _on_run_finished(**kw) -> None:
     _p(f"[{manifest.run_id}] finished: {manifest.status}")
 
 
+def _on_possible_overlap(**kw) -> None:
+    _p(f"  possible overlap: {kw['task_a']} and {kw['task_b']} both touch {kw['path']} "
+       f"-- serialised, but their branches will conflict at integration")
+
+
 _HANDLERS = {
     "run_started": _on_run_started,
+    "possible_overlap": _on_possible_overlap,
     "reconcile_done": _on_reconcile_done,
     "task_started": _on_task_started,
     "task_implemented": _on_task_implemented,

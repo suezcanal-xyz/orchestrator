@@ -69,6 +69,26 @@ def test_tasks_without_files_hint_scheduled_alone():
     assert len(batches) == 2
 
 
+def test_overlap_is_detected_across_path_spellings():
+    g = TaskGraph([
+        make_task("A", files=["./src/x.py"]),
+        make_task("B", files=["src\\x.py"]),
+    ])
+    assert len(g.parallelizable_batches()) == 2  # serialised
+    assert g.likely_overlaps() == [("A", "B", "src/x.py")]
+
+
+def test_likely_overlaps_reports_shared_files_not_disjoint_ones():
+    g = TaskGraph([
+        make_task("SC-1", files=["apps/api/intel/x.py"]),
+        make_task("SC-2", files=["apps/api/intel/x.py", "apps/api/intel/tests/"]),
+        make_task("SC-3", files=["apps/web/panel.tsx"]),
+    ])
+    pairs = g.likely_overlaps()
+    assert ("SC-1", "SC-2", "apps/api/intel/x.py") in pairs
+    assert not any("SC-3" in p for pair in pairs for p in pair)
+
+
 def test_next_id_increments():
     g = TaskGraph([make_task("SC-001"), make_task("SC-002")])
     assert g.next_id("SC") == "SC-003"

@@ -409,6 +409,7 @@ def test_run_reconcile_error_that_is_not_a_limit_still_raises(demo_repo, monkeyp
         engine.run(repo=demo_repo, prompt_text="x", implement_workers=[ScriptedWorker("claude", {})])
 
 
+<<<<<<< Updated upstream
 def test_run_resume_continues_from_the_task_store_and_links_the_prior_run(tmp_path):
     repo = init_repo(tmp_path / "res", files={
         "a.py": "x = 0\n", "b.py": "x = 0\n",
@@ -446,6 +447,22 @@ def test_run_resume_continues_from_the_task_store_and_links_the_prior_run(tmp_pa
     assert "resumed from run" in r2.manifest.notes
     assert r2.run_paths.plan_before.read_text(encoding="utf-8") == run1_plan_before
     assert r2.run_paths.run_id != run1_id
+=======
+def test_run_warns_about_tasks_that_touch_the_same_file(tmp_path):
+    from orchestrator import extensions
+
+    repo = init_repo(tmp_path / "ov")
+    state.save_task_store(repo, TaskGraph([
+        Task(id="OV-1", title="a", status="READY", verification=['python -c "pass"'], files_hint=["./m.py"]),
+        Task(id="OV-2", title="b", status="READY", verification=['python -c "pass"'], files_hint=["m.py"]),
+    ]))
+    seen = []
+    extensions.register_hook("possible_overlap",
+                             lambda **kw: seen.append((kw["task_a"], kw["task_b"], kw["path"])))
+
+    engine.run(repo=repo, prompt_text=None, implement_workers=[ScriptedWorker("claude", {})])
+    assert ("OV-1", "OV-2", "m.py") in seen
+>>>>>>> Stashed changes
 
 
 def test_task_that_never_gets_fixed_is_blocked(demo_repo):

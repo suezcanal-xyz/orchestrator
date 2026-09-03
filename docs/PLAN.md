@@ -3,7 +3,7 @@ project: orchestrator
 current_version: 0.2.0
 target_version: 0.3.0
 active_milestone: senior-pipeline-readiness
-status: IN_PROGRESS
+status: READY_FOR_REVIEW
 ---
 # PROJECT PLAN
 
@@ -122,7 +122,7 @@ _Regenerated automatically by the orchestrator from
 | ORCH-006 | Explicit milestone gate: `## Verification Commands` run once, can block READY | DONE | P2 | ORCH-003 |
 | ORCH-007 | Recognise a worker session-limit as a first-class run status with reset time | DONE | P1 | - |
 | ORCH-008 | `orchestrator run --resume <run-id>`: continue from completed tasks | DONE | P2 | ORCH-007 |
-| ORCH-009 | Scheduler: serialise same-file tasks and flag likely conflicts before execution | READY | P3 | - |
+| ORCH-009 | Scheduler: serialise same-file tasks and flag likely conflicts before execution | DONE | P3 | - |
 
 ## Dependencies
 
@@ -193,7 +193,7 @@ _Regenerated automatically by the orchestrator from
 
 ## Blockers
 
-None.
+None -- all nine ORCH tasks are DONE.
 
 ## Completed Work
 
@@ -218,6 +218,19 @@ None.
 - Any autonomous merge / deploy -- out of scope indefinitely (spec §19).
 
 ## Change History
+
+### 2026-09-03 -- ORCH-009 DONE + milestone READY_FOR_REVIEW
+
+`TaskGraph.files_overlap` now normalises path spellings (`./src/x.py` ==
+`src\x.py` == `src/x.py`); new `shared_files()` / `likely_overlaps()`.
+`engine.run` fires a `possible_overlap` hook for every pair of scheduled
+tasks that touch the same file (they are already serialised into separate
+batches; the warning is that their branches still collide at
+integration), and the console progress printer shows it.
+
+All nine ORCH-001..009 tasks are DONE. Milestone `senior-pipeline-
+readiness` is READY_FOR_REVIEW pending the gate suite (`pytest` x2,
+`ruff`) and a human review.
 
 ### 2026-09-03 -- ORCH-008 DONE
 

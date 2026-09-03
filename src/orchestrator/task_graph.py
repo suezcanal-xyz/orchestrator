@@ -155,14 +155,43 @@ class TaskGraph:
         return out
 
     @staticmethod
-    def files_overlap(a: Task, b: Task) -> bool:
-        """Conservative overlap check: shared hinted path or one is a prefix of the other."""
+    def _norm_hint(p: str) -> str:
+        """Normalise a files_hint entry so `./src/x.py`, `src\\x.py` and
+        `src/x.py` compare equal."""
+        return p.replace("\\", "/").lstrip("./").rstrip("/")
+
+    @classmethod
+    def files_overlap(cls, a: Task, b: Task) -> bool:
+        """Conservative overlap check: shared hinted path (any spelling) or
+        one is a directory prefix of the other."""
+        return cls.shared_files(a, b) != []
+
+    @classmethod
+    def shared_files(cls, a: Task, b: Task) -> list[str]:
+        """Every hinted path where `a` and `b` overlap, normalised."""
+        out: list[str] = []
         for pa in a.files_hint:
             for pb in b.files_hint:
-                na, nb = pa.rstrip("/"), pb.rstrip("/")
+                na, nb = cls._norm_hint(pa), cls._norm_hint(pb)
                 if na == nb or na.startswith(nb + "/") or nb.startswith(na + "/"):
-                    return True
-        return False
+                    shortest = na if len(na) <= len(nb) else nb
+                    if shortest not in out:
+                        out.append(shortest)
+        return out
+
+    def likely_overlaps(self, tasks: "list[Task] | None" = None) -> list[tuple[str, str, str]]:
+        """Pairs of tasks (from `tasks`, default all READY) whose files_hint
+        overlap -- (id_a, id_b, shared_path). The scheduler serialises
+        these into different batches; this list is what a run should warn
+        the human about, because the two branches still have to be
+        integrated against the same file."""
+        pool = sorted(tasks if tasks is not None else self.ready_tasks(), key=lambda t: t.id)
+        out: list[tuple[str, str, str]] = []
+        for i, a in enumerate(pool):
+            for b in pool[i + 1:]:
+                for path in self.shared_files(a, b):
+                    out.append((a.id, b.id, path))
+        return out
 
     def parallelizable_batches(self) -> list[list[Task]]:
         """Group ready tasks into batches that can safely run in parallel worktrees.
