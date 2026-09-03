@@ -115,6 +115,55 @@ def create_worktree(repo: Path, run_id: str, task_id: str, base_ref: str | None 
     return Worktree(path=wt_dir, branch=branch, repo_root=root)
 
 
+@dataclass
+class IntegrationResult:
+    worktree: Worktree
+    merged: list[str]      # task branches that merged cleanly
+    conflicted: list[str]  # task branches that did not (recorded, then skipped)
+
+
+def create_integration_worktree(
+    repo: Path, run_id: str, task_branches: list[str], base_ref: str | None = None
+) -> IntegrationResult:
+    """A scratch worktree off the protected branch with every given task
+    branch merged in -- the combined state a human would get by merging all
+    of this run's completed work.
+
+    Milestone acceptance must be judged against what the run actually
+    produced (spec section 19), not against the untouched base branch:
+    task work lives only in per-task worktrees and nothing is merged in v0
+    (spec section 22 step 17), so running the acceptance commands in `repo`
+    itself always fails. A branch that does not merge cleanly is rolled
+    back and recorded in `conflicted` -- overlapping parallel work the
+    scheduler should have kept apart (spec section 7), surfaced rather than
+    crashed on.
+    """
+    root = repo_root(repo)
+    base = base_ref or default_branch(root)
+    branch = f"orchestrator/{run_id}/_integration"
+    wt_dir = root / ".orchestrator" / "worktrees" / run_id / "_integration"
+    wt_dir.parent.mkdir(parents=True, exist_ok=True)
+    if wt_dir.exists():
+        _run(["worktree", "remove", "--force", str(wt_dir)], cwd=root, check=False)
+    _run(["branch", "-D", branch], cwd=root, check=False)
+    _run(["worktree", "add", "-b", branch, str(wt_dir), base], cwd=root)
+
+    merged: list[str] = []
+    conflicted: list[str] = []
+    for tb in task_branches:
+        p = _run(["merge", "--no-ff", "-m", f"integrate {tb}", tb], cwd=wt_dir, check=False)
+        if p.returncode == 0:
+            merged.append(tb)
+        else:
+            _run(["merge", "--abort"], cwd=wt_dir, check=False)
+            conflicted.append(tb)
+    return IntegrationResult(
+        worktree=Worktree(path=wt_dir, branch=branch, repo_root=root),
+        merged=merged,
+        conflicted=conflicted,
+    )
+
+
 def remove_worktree(wt: Worktree, force: bool = True) -> None:
     args = ["worktree", "remove"]
     if force:
