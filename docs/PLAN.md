@@ -121,7 +121,7 @@ _Regenerated automatically by the orchestrator from
 | ORCH-005 | Private context provider follows the doc pointers in a project's NOTES.md | DONE | P2 | - |
 | ORCH-006 | Explicit milestone gate: `## Verification Commands` run once, can block READY | DONE | P2 | ORCH-003 |
 | ORCH-007 | Recognise a worker session-limit as a first-class run status with reset time | DONE | P1 | - |
-| ORCH-008 | `orchestrator run --resume <run-id>`: continue from completed tasks | READY | P2 | ORCH-007 |
+| ORCH-008 | `orchestrator run --resume <run-id>`: continue from completed tasks | DONE | P2 | ORCH-007 |
 | ORCH-009 | Scheduler: serialise same-file tasks and flag likely conflicts before execution | READY | P3 | - |
 
 ## Dependencies
@@ -218,6 +218,15 @@ None.
 - Any autonomous merge / deploy -- out of scope indefinitely (spec §19).
 
 ## Change History
+
+### 2026-09-03 -- ORCH-008 DONE
+
+`orchestrator run --resume <run-id>` (and `orchestrator-private run
+--resume`): continue a prior run. Skips reconcile (`--prompt` is ignored
+with a note), keeps the task store's DONE tasks, carries the prior run's
+`plan-before.md` into the new run directory, and records
+`resumed_from` in the manifest. An unknown run id errors. Pairs with
+ORCH-007: after a `BLOCKED_SESSION_LIMIT` pause, re-run with `--resume`.
 
 ### 2026-09-03 -- ORCH-007 DONE
 

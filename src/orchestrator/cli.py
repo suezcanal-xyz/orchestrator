@@ -118,9 +118,12 @@ def plan_cmd(repo: Path) -> None:
 @click.option("--verification-timeout", type=int, default=None, help=f"Seconds per verification command. Default {DEFAULT_VERIFICATION_TIMEOUT}.")
 @click.option("--base", "base_ref", default=None, help="Branch/ref to base task worktrees on. Default: the repo's detected default branch. Use a WIP feature branch to work tasks whose context only exists there.")
 @click.option("--task", "task_ids", multiple=True, help="Run only these task id(s), skipping the rest of READY. Repeatable.")
+@click.option("--resume", "resume_from", default=None, help="Continue a prior run id (under .orchestrator/runs/): skip reconcile, keep DONE tasks, carry the prior plan forward. Use after a paused (session-limit) run.")
 @click.option("--quiet", is_flag=True, help="Suppress live per-task progress; print only the final summary.")
-def run(repo: Path, prompt: str | None, workers: tuple[str, ...], max_debug_attempts: int | None, verification_timeout: int | None, base_ref: str | None, task_ids: tuple[str, ...], quiet: bool) -> None:
+def run(repo: Path, prompt: str | None, workers: tuple[str, ...], max_debug_attempts: int | None, verification_timeout: int | None, base_ref: str | None, task_ids: tuple[str, ...], resume_from: str | None, quiet: bool) -> None:
     """ingest + plan + execution + verification in one pass (the daily entry point)."""
+    if resume_from and prompt:
+        click.echo("note: --resume ignores --prompt (resuming does not reconcile a new request).", err=True)
     project = engine.load_or_create_plan(repo).meta.project
     resolved = _resolve_workers(tuple(policy.effective_workers(project, tuple(workers))))
     mda = policy.effective_int("max_debug_attempts", project, DEFAULT_MAX_DEBUG_ATTEMPTS, max_debug_attempts)
@@ -142,7 +145,7 @@ def run(repo: Path, prompt: str | None, workers: tuple[str, ...], max_debug_atte
     result = engine.run(
         repo=repo, prompt_text=prompt, implement_workers=resolved,
         max_debug_attempts=mda, verification_timeout=vt,
-        base_ref=base_ref, only_task_ids=set(task_ids) or None,
+        base_ref=base_ref, only_task_ids=set(task_ids) or None, resume_from=resume_from,
     )
     for o in result.task_outcomes:
         click.echo(f"{o.task_id}: {o.status}  (debug attempts: {o.debug_attempts})")

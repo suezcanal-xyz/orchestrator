@@ -409,6 +409,45 @@ def test_run_reconcile_error_that_is_not_a_limit_still_raises(demo_repo, monkeyp
         engine.run(repo=demo_repo, prompt_text="x", implement_workers=[ScriptedWorker("claude", {})])
 
 
+def test_run_resume_continues_from_the_task_store_and_links_the_prior_run(tmp_path):
+    repo = init_repo(tmp_path / "res", files={
+        "a.py": "x = 0\n", "b.py": "x = 0\n",
+        "tests/test_a.py": "import sys,pathlib\nsys.path.insert(0,str(pathlib.Path(__file__).parents[1]))\n"
+                           "from a import x\n\ndef test_a():\n    assert x == 1\n",
+        "tests/test_b.py": "import sys,pathlib\nsys.path.insert(0,str(pathlib.Path(__file__).parents[1]))\n"
+                           "from b import x\n\ndef test_b():\n    assert x == 1\n",
+        "docs/PLAN.md": (
+            "---\nproject: res\ncurrent_version: 0.0.0\ntarget_version: 0.1.0\n"
+            "active_milestone: m\nstatus: IN_PROGRESS\n---\n# PROJECT PLAN\n\n## Tasks\n\n_x_\n"
+        ),
+    })
+    state.save_task_store(repo, TaskGraph([
+        Task(id="RS-1", title="a", status="READY", verification=["python -m pytest tests/test_a.py -q"], files_hint=["a.py"]),
+        Task(id="RS-2", title="b", status="READY", verification=["python -m pytest tests/test_b.py -q"], files_hint=["b.py"]),
+    ]))
+
+    # run 1: only RS-1, it succeeds
+    w1 = ScriptedWorker("claude", {("RS-1", "implement"): lambda cwd: (cwd / "a.py").write_text("x = 1\n", encoding="utf-8")})
+    r1 = engine.run(repo=repo, prompt_text=None, implement_workers=[w1], only_task_ids={"RS-1"})
+    assert r1.task_outcomes[0].status == "DONE"
+    run1_id = r1.run_paths.run_id
+    run1_plan_before = r1.run_paths.plan_before.read_text(encoding="utf-8")
+
+    # unknown resume id errors
+    with pytest.raises(ValueError, match="no run"):
+        engine.run(repo=repo, prompt_text=None, implement_workers=[w1], resume_from="nope-123")
+
+    # run 2: resume -- RS-1 already DONE, only RS-2 runs; prior plan carried forward
+    w2 = ScriptedWorker("claude", {("RS-2", "implement"): lambda cwd: (cwd / "b.py").write_text("x = 1\n", encoding="utf-8")})
+    r2 = engine.run(repo=repo, prompt_text="ignored on resume", implement_workers=[w2], resume_from=run1_id)
+    assert [o.task_id for o in r2.task_outcomes] == ["RS-2"]
+    assert r2.task_outcomes[0].status == "DONE"
+    assert r2.manifest.resumed_from == run1_id
+    assert "resumed from run" in r2.manifest.notes
+    assert r2.run_paths.plan_before.read_text(encoding="utf-8") == run1_plan_before
+    assert r2.run_paths.run_id != run1_id
+
+
 def test_task_that_never_gets_fixed_is_blocked(demo_repo):
     repo = demo_repo
     graph = TaskGraph(
