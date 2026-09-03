@@ -116,8 +116,10 @@ def plan_cmd(repo: Path) -> None:
 @click.option("--worker", "workers", multiple=True, help="Implement workers, in assignment order. Overrides any private `workers` policy.")
 @click.option("--max-debug-attempts", type=int, default=None, help=f"Default {DEFAULT_MAX_DEBUG_ATTEMPTS} (or the private `max_debug_attempts` policy).")
 @click.option("--verification-timeout", type=int, default=None, help=f"Seconds per verification command. Default {DEFAULT_VERIFICATION_TIMEOUT}.")
+@click.option("--base", "base_ref", default=None, help="Branch/ref to base task worktrees on. Default: the repo's detected default branch. Use a WIP feature branch to work tasks whose context only exists there.")
+@click.option("--task", "task_ids", multiple=True, help="Run only these task id(s), skipping the rest of READY. Repeatable.")
 @click.option("--quiet", is_flag=True, help="Suppress live per-task progress; print only the final summary.")
-def run(repo: Path, prompt: str | None, workers: tuple[str, ...], max_debug_attempts: int | None, verification_timeout: int | None, quiet: bool) -> None:
+def run(repo: Path, prompt: str | None, workers: tuple[str, ...], max_debug_attempts: int | None, verification_timeout: int | None, base_ref: str | None, task_ids: tuple[str, ...], quiet: bool) -> None:
     """ingest + plan + execution + verification in one pass (the daily entry point)."""
     project = engine.load_or_create_plan(repo).meta.project
     resolved = _resolve_workers(tuple(policy.effective_workers(project, tuple(workers))))
@@ -130,6 +132,7 @@ def run(repo: Path, prompt: str | None, workers: tuple[str, ...], max_debug_atte
     result = engine.run(
         repo=repo, prompt_text=prompt, implement_workers=resolved,
         max_debug_attempts=mda, verification_timeout=vt,
+        base_ref=base_ref, only_task_ids=set(task_ids) or None,
     )
     for o in result.task_outcomes:
         click.echo(f"{o.task_id}: {o.status}  (debug attempts: {o.debug_attempts})")
