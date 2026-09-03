@@ -151,6 +151,42 @@ def test_closed_loop_happy_path_and_cross_model_debug(demo_repo):
     assert (result.run_paths.root / "usage.json").exists()
 
 
+def test_verdict_flags_a_milestone_with_no_acceptance_criteria(tmp_path):
+    from orchestrator import plan as plan_mod
+
+    doc = plan_mod.new_plan("m", current_version="0.0.0", target_version="0.1.0")  # criteria undefined
+    graph = TaskGraph([Task(id="M-1", title="t", status="DONE")])
+    v = engine.build_verdict(tmp_path, doc, graph)
+    assert v.ready is True  # task is DONE
+    assert "task DONE/BLOCKED status only" in v.notes
+    assert "Acceptance Criteria" in v.notes
+
+
+def test_ingest_records_a_blocker_when_criteria_are_undefined(tmp_path, monkeypatch):
+    from orchestrator import plan as plan_mod
+
+    repo = init_repo(tmp_path / "ic")
+    plan_mod.new_plan("ic").save(repo / "docs" / "PLAN.md")
+
+    def W():
+        return ReconcileOnlyWorker()
+
+    r1 = engine.ingest(repo, "do a thing", W())
+    blockers = r1.plan.get_section("Blockers")
+    assert "Milestone acceptance not defined" in blockers
+
+    r2 = engine.ingest(repo, "another thing", W())  # not duplicated
+    assert r2.plan.get_section("Blockers").count("Milestone acceptance not defined") == 1
+
+    # once criteria + commands are filled in, the blocker is cleared
+    doc = plan_mod.load(repo / "docs" / "PLAN.md")
+    doc.set_section("Acceptance Criteria", "- op returns 1")
+    doc.set_section("Verification Commands", "- python -c \"pass\"")
+    doc.save(repo / "docs" / "PLAN.md")
+    r3 = engine.ingest(repo, "third", W())
+    assert "Milestone acceptance not defined" not in r3.plan.get_section("Blockers")
+
+
 def test_verdict_checks_integrated_task_work_not_the_untouched_base(tmp_path):
     """Milestone acceptance must be judged against the combined result of
     the run's DONE task branches, not the protected branch (which is never

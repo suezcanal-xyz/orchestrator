@@ -92,10 +92,34 @@ def ingest(repo: Path, prompt_text: str, worker: Worker) -> IngestResult:
         context_block=context_mod.with_providers(ctx, repo),
         worker=worker,
     )
+    _flag_undefined_criteria(doc)
     doc.save(plan_path(repo))
     state.save_task_store(repo, graph)
     extensions.run_hooks("reconcile_done", repo=repo, prompt=prompt_text, result=result)
     return IngestResult(plan=doc, graph=graph, reconcile_result=result)
+
+
+_UNDEFINED_CRITERIA_BLOCKER = (
+    "Milestone acceptance not defined: `## Acceptance Criteria` and/or "
+    "`## Verification Commands` are empty, so `orchestrator verify` and the "
+    "run verdict are task-status-only. Fill them in before treating a "
+    "READY_FOR_REVIEW as real."
+)
+
+
+def _flag_undefined_criteria(doc: plan_mod.PlanDocument) -> None:
+    """Record a one-time `## Blockers` line when the milestone has no
+    acceptance criteria yet -- shaping a plan should not quietly leave the
+    verdict meaningless."""
+    missing = _plan_criteria_undefined(doc)
+    body = doc.get_section("Blockers")
+    if missing and "Milestone acceptance not defined" not in body:
+        doc.append_to_section("Blockers", f"- {_UNDEFINED_CRITERIA_BLOCKER}")
+    elif not missing and "Milestone acceptance not defined" in body:
+        kept = "\n".join(
+            ln for ln in body.splitlines() if "Milestone acceptance not defined" not in ln
+        ).strip()
+        doc.set_section("Blockers", kept or "None.")
 
 
 @dataclass
@@ -265,7 +289,30 @@ def build_verdict(
             if t.status == "DEFERRED":
                 continue
             verdict.criteria.append(CriterionResult(description=f"{t.id}: {t.title}", passed=t.status == "DONE"))
+        missing = _plan_criteria_undefined(doc)
+        if missing:
+            verdict.notes = (
+                f"docs/PLAN.md has no bulleted `## {'` / `## '.join(missing)}` -- this "
+                f"verdict reflects task DONE/BLOCKED status only, not milestone-level "
+                f"acceptance. Fill those sections in for a real gate."
+            )
+        elif criteria_lines and verification_lines:
+            verdict.notes = (
+                f"`## Acceptance Criteria` ({len(criteria_lines)}) and "
+                f"`## Verification Commands` ({len(verification_lines)}) are both non-empty "
+                f"but different lengths -- they are matched positionally, so the verdict "
+                f"fell back to task status. Make the two lists line up 1:1 for a real gate."
+            )
     return verdict
+
+
+def _plan_criteria_undefined(doc: plan_mod.PlanDocument) -> list[str]:
+    """Canonical sections a milestone needs before its verdict means
+    anything, that are still empty / `_Not yet defined._`."""
+    return [
+        s for s in ("Acceptance Criteria", "Verification Commands")
+        if not _bullets_of(doc.get_section(s))
+    ]
 
 
 def _assign_workers(tasks: list[Task], workers: list[Worker]) -> dict[str, Worker]:
@@ -398,7 +445,7 @@ def run(
 
     verdict = build_verdict(verify_root, doc, graph, timeout_per_command=verification_timeout)
     scoped = only_task_ids is not None
-    notes: list[str] = []
+    notes: list[str] = [verdict.notes] if verdict.notes else []
     if integration_conflicts:
         notes.append(
             "merge conflicts integrating completed task branches "
