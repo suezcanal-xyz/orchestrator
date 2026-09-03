@@ -117,7 +117,7 @@ _Regenerated automatically by the orchestrator from
 | ORCH-001 | Per-project `work_branch`: runs pick the base branch from config, not a flag | DONE | P1 | - |
 | ORCH-002 | Scoped-run verdict: distinguish "task failed" from "milestone incomplete" | DONE | P1 | - |
 | ORCH-003 | Loud warning + recorded note when milestone acceptance criteria are undefined | DONE | P2 | - |
-| ORCH-004 | Honest Codex cost display: never a misleading `$0.0000` for real work | READY | P2 | - |
+| ORCH-004 | Honest Codex cost display: never a misleading `$0.0000` for real work | DONE | P2 | - |
 | ORCH-005 | Private context provider follows the doc pointers in a project's NOTES.md | READY | P2 | - |
 | ORCH-006 | Explicit milestone gate: `## Verification Commands` run once, can block READY | READY | P2 | ORCH-003 |
 | ORCH-007 | Recognise a worker session-limit as a first-class run status with reset time | READY | P1 | - |
@@ -218,6 +218,14 @@ None.
 - Any autonomous merge / deploy -- out of scope indefinitely (spec §19).
 
 ## Change History
+
+### 2026-09-03 -- ORCH-004 DONE
+
+`run_usage_summary` now tracks `duration_seconds` per worker/stage.
+`format_cost_section` prints `usage not reported (ran Ns; this CLI emits
+no token count)` for a stage that ran >= 5s but reported no cost and no
+tokens, and the `Total:` line names the gap -- no more misleading
+`$0.0000  (0 tok)` for a 335-second Codex implement.
 
 ### 2026-09-03 -- ORCH-003 DONE
 

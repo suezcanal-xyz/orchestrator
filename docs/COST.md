@@ -60,3 +60,9 @@ By stage:
 format json` does, so codex figures are a best-effort parse of its output
 and may be missing or coarse. Claude and opencode figures come straight
 from the CLI's own usage payload.
+
+When a stage ran for real (>= 5 seconds) but reported neither a cost nor
+any token count, the `## Cost` section says `usage not reported (ran Ns;
+this CLI emits no token count)` for that worker/stage and the `Total:`
+line names the gap -- rather than printing a misleading `$0.0000  (0
+tok)` that reads as "this was free".
