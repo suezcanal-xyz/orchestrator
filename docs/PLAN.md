@@ -119,7 +119,7 @@ _Regenerated automatically by the orchestrator from
 | ORCH-003 | Loud warning + recorded note when milestone acceptance criteria are undefined | DONE | P2 | - |
 | ORCH-004 | Honest Codex cost display: never a misleading `$0.0000` for real work | DONE | P2 | - |
 | ORCH-005 | Private context provider follows the doc pointers in a project's NOTES.md | DONE | P2 | - |
-| ORCH-006 | Explicit milestone gate: `## Verification Commands` run once, can block READY | READY | P2 | ORCH-003 |
+| ORCH-006 | Explicit milestone gate: `## Verification Commands` run once, can block READY | DONE | P2 | ORCH-003 |
 | ORCH-007 | Recognise a worker session-limit as a first-class run status with reset time | READY | P1 | - |
 | ORCH-008 | `orchestrator run --resume <run-id>`: continue from completed tasks | READY | P2 | ORCH-007 |
 | ORCH-009 | Scheduler: serialise same-file tasks and flag likely conflicts before execution | READY | P3 | - |
@@ -218,6 +218,14 @@ None.
 - Any autonomous merge / deploy -- out of scope indefinitely (spec §19).
 
 ## Change History
+
+### 2026-09-03 -- ORCH-006 DONE
+
+`Verdict` gains a `gate: list[GateResult]`. `build_verdict` runs every
+`## Verification Commands` entry in the integration worktree as an
+explicit milestone gate; a gate failure blocks `READY_FOR_REVIEW` even
+when every task is DONE. Commands already run by the 1:1 criteria path are
+reused, not re-run. `VERDICT.md` gains a `## Milestone Gate` section.
 
 ### 2026-09-03 -- ORCH-005 DONE
 

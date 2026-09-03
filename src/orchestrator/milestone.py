@@ -54,15 +54,27 @@ class CriterionResult:
 
 
 @dataclass
+class GateResult:
+    """One `## Verification Commands` entry, run once in the integration
+    worktree as an explicit milestone gate (ORCH-006)."""
+
+    command: str
+    passed: bool
+
+
+@dataclass
 class Verdict:
     project: str
     target_version: str
     criteria: list[CriterionResult] = field(default_factory=list)
+    gate: list[GateResult] = field(default_factory=list)
     notes: str = ""
 
     @property
     def ready(self) -> bool:
-        return len(self.criteria) > 0 and all(c.passed for c in self.criteria)
+        criteria_ok = len(self.criteria) > 0 and all(c.passed for c in self.criteria)
+        gate_ok = all(g.passed for g in self.gate)  # empty gate is vacuously ok
+        return criteria_ok and gate_ok
 
     @property
     def result_status(self) -> MilestoneStatus:
@@ -82,6 +94,11 @@ class Verdict:
             mark = "PASS" if c.passed else "FAIL"
             detail = f"  ({c.detail})" if c.detail else ""
             lines.append(f"{mark}  {c.description}{detail}")
+        if self.gate:
+            lines += ["", "## Milestone Gate", "",
+                      "(docs/PLAN.md `## Verification Commands`, run in the integration worktree)", ""]
+            for g in self.gate:
+                lines.append(f"{'PASS' if g.passed else 'FAIL'}  {g.command}")
         if self.notes:
             lines += ["", "## Notes", "", self.notes]
         lines += [
