@@ -7,11 +7,21 @@ claimed by a model. This is plain subprocess plumbing -- no model calls.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+
+# A verification command must only ever tell us pass/fail -- it must not
+# leave working-tree artifacts behind. Without this, a Python verification
+# command (pytest, a project's own test runner, ...) writes __pycache__/
+# and .pytest_cache/ into the worktree; the next debugger commit's
+# `git add -A` then picks those up as part of the task's diff, so the
+# evidence trail (spec section 11, 14) for a one-line source fix shows
+# unrelated binary .pyc churn alongside it.
+_VERIFICATION_ENV = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
 
 
 @dataclass
@@ -63,6 +73,7 @@ def run_command(
             encoding="utf-8",
             errors="replace",
             timeout=timeout,
+            env=_VERIFICATION_ENV,
         )
         exit_code = proc.returncode
         stdout, stderr = proc.stdout, proc.stderr

@@ -41,3 +41,14 @@ def test_timeout_is_captured_not_raised(tmp_path):
     assert not r.passed
     assert r.exit_code == 124
     assert "timed out" in r.stderr
+
+
+def test_python_command_leaves_no_pycache(tmp_path):
+    """A verification command must only report pass/fail -- it must not
+    leave __pycache__/ behind for the next `git add -A` (debugger.py's
+    commit_fn) to pick up as unrelated evidence-diff noise (see the
+    _VERIFICATION_ENV comment in verifier.py)."""
+    (tmp_path / "mod.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+    r = verifier.run_command("python -c \"import mod; assert mod.f() == 1\"", tmp_path)
+    assert r.passed
+    assert not (tmp_path / "__pycache__").exists()
