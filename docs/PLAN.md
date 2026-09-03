@@ -118,7 +118,7 @@ _Regenerated automatically by the orchestrator from
 | ORCH-002 | Scoped-run verdict: distinguish "task failed" from "milestone incomplete" | DONE | P1 | - |
 | ORCH-003 | Loud warning + recorded note when milestone acceptance criteria are undefined | DONE | P2 | - |
 | ORCH-004 | Honest Codex cost display: never a misleading `$0.0000` for real work | DONE | P2 | - |
-| ORCH-005 | Private context provider follows the doc pointers in a project's NOTES.md | READY | P2 | - |
+| ORCH-005 | Private context provider follows the doc pointers in a project's NOTES.md | DONE | P2 | - |
 | ORCH-006 | Explicit milestone gate: `## Verification Commands` run once, can block READY | READY | P2 | ORCH-003 |
 | ORCH-007 | Recognise a worker session-limit as a first-class run status with reset time | READY | P1 | - |
 | ORCH-008 | `orchestrator run --resume <run-id>`: continue from completed tasks | READY | P2 | ORCH-007 |
@@ -218,6 +218,15 @@ None.
 - Any autonomous merge / deploy -- out of scope indefinitely (spec §19).
 
 ## Change History
+
+### 2026-09-03 -- ORCH-005 DONE
+
+`orchestrator_private.bootstrap.project_notes_context` now scans NOTES.md
+for backtick-quoted repo-relative doc paths (`docs/LEGACY.MD`,
+`docs/AI_ENGINEERING_POLICY.md`, ...), and folds each one that resolves to
+a real file *inside* the target repo into the context as its own
+`project doc: <path>` section (1800 chars/doc, 4 docs max). Traversal and
+absolute paths are rejected.
 
 ### 2026-09-03 -- ORCH-004 DONE
 
