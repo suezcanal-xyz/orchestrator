@@ -52,3 +52,26 @@ def test_python_command_leaves_no_pycache(tmp_path):
     r = verifier.run_command("python -c \"import mod; assert mod.f() == 1\"", tmp_path)
     assert r.passed
     assert not (tmp_path / "__pycache__").exists()
+
+
+def test_reverification_sees_a_same_length_source_edit(tmp_path):
+    """Not just cosmetic: this is the actual closed-loop debug-loop failure
+    mode. A debug fix that happens to be the same byte length as the buggy
+    source it replaces (e.g. `a + b` -> `a * b`) can land in the same
+    whole-second mtime as the first run's compiled __pycache__/*.pyc; with
+    bytecode caching on, CPython's timestamp+size validation then reuses
+    the stale pyc and the debug worker's fix never actually executes on
+    reverification -- the task reports BLOCKED even though the file on
+    disk is correct. PYTHONDONTWRITEBYTECODE=1 removes the cache CPython
+    would otherwise trust."""
+    (tmp_path / "mod.py").write_text("def f():\n    return 1 + 1\n", encoding="utf-8")
+    (tmp_path / "check.py").write_text(
+        "import sys\nfrom mod import f\nsys.exit(0 if f() == 4 else 1)\n", encoding="utf-8"
+    )
+    cmd = "python check.py"
+    assert not verifier.run_command(cmd, tmp_path).passed
+
+    (tmp_path / "mod.py").write_text("def f():\n    return 2 * 2\n", encoding="utf-8")  # same length
+    second = verifier.run_command(cmd, tmp_path)
+    assert second.passed, second.stdout + second.stderr
+    assert not (tmp_path / "__pycache__").exists()
