@@ -73,13 +73,28 @@ def _describe(v) -> str:
 
 
 def _spawn_login(worker: str) -> None:
-    cmd = LOGIN_COMMANDS[worker]
+    """Launch `<cli> login` detached so the interactive OAuth flow does not
+    block the server. Resolve the CLI on PATH first: on Windows these are
+    `.cmd`/`.bat` shims that CreateProcess cannot execute directly, so they
+    must go through a shell (see workers.base.resolve_executable)."""
+    from orchestrator.workers.base import WorkerError, resolve_executable
+
+    name, *args = LOGIN_COMMANDS[worker]
+    try:
+        exe, use_shell = resolve_executable(name)
+    except WorkerError as e:
+        raise RuntimeError(f"{name!r} is not on PATH") from e
+
     kwargs: dict = {}
     if sys.platform == "win32":
         kwargs["creationflags"] = subprocess.CREATE_NEW_CONSOLE  # type: ignore[attr-defined]
     else:
         kwargs["start_new_session"] = True
-    subprocess.Popen(cmd, **kwargs)  # noqa: S603 - fixed command, no shell
+
+    if use_shell:
+        subprocess.Popen(subprocess.list2cmdline([exe, *args]), shell=True, **kwargs)  # noqa: S602
+    else:
+        subprocess.Popen([exe, *args], **kwargs)  # noqa: S603
 
 
 def _run_engine(repo: Path, prompt: str | None, workers: list[str]) -> None:
@@ -112,6 +127,16 @@ def create_app():
     def index() -> str:
         return (static / "index.html").read_text(encoding="utf-8")
 
+    @app.get("/favicon.ico")
+    def favicon():
+        from fastapi.responses import Response
+
+        svg = (
+            "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'>"
+            "<text y='14' font-size='14'>⚙️</text></svg>"
+        )
+        return Response(svg, media_type="image/svg+xml")
+
     @app.get("/api/doctor")
     def doctor() -> list[dict]:
         out = []
@@ -126,7 +151,10 @@ def create_app():
     def login(worker: str) -> dict:
         if worker not in LOGIN_COMMANDS:
             raise HTTPException(400, f"unknown worker {worker!r}")
-        _spawn_login(worker)
+        try:
+            _spawn_login(worker)
+        except Exception as e:  # noqa: BLE001 - surface as JSON, not a 500 HTML page
+            raise HTTPException(502, f"could not start {worker} login: {e}")
         return {"started": " ".join(LOGIN_COMMANDS[worker]),
                 "note": "Complete the login in the window/browser that opened, then refresh status."}
 

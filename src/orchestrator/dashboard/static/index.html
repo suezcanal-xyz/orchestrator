@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='14' font-size='14'%3E%E2%9A%99%EF%B8%8F%3C/text%3E%3C/svg%3E">
 <title>orchestrator onboarding</title>
 <style>
   :root {
@@ -104,8 +105,16 @@ async function loadDoctor() {
       const b = el('button', 'secondary', authed ? 'Reconnect' : 'Connect');
       b.onclick = async () => {
         b.disabled = true;
-        const r = await (await fetch('/api/login/' + w.name, {method:'POST'})).json();
-        $('#workers-toast').textContent = r.note || 'Login started; finish it, then status refreshes.';
+        const resp = await fetch('/api/login/' + w.name, {method:'POST'});
+        let msg;
+        if (resp.ok) {
+          msg = (await resp.json()).note || 'Login started; finish it, then status refreshes.';
+        } else {
+          let detail = resp.statusText;
+          try { detail = (await resp.json()).detail; } catch (_) { try { detail = await resp.text(); } catch (_) {} }
+          msg = w.name + ': ' + detail;
+        }
+        $('#workers-toast').textContent = msg;
         setTimeout(() => { b.disabled = false; loadDoctor(); }, 4000);
       };
       row.append(b);
