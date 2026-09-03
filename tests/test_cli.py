@@ -101,3 +101,30 @@ def test_onboarding_help_works_without_the_extra():
     result = runner.invoke(main, ["onboarding", "--help"])
     assert result.exit_code == 0
     assert "dashboard" in result.output
+
+
+def test_run_hints_when_on_a_non_default_branch_without_base(tmp_path, monkeypatch):
+    import subprocess
+
+    from orchestrator import engine
+
+    repo = init_repo(tmp_path / "demo", files={
+        "docs/PLAN.md": (
+            "---\nproject: demo\ncurrent_version: 0.0.0\ntarget_version: 0.1.0\n"
+            "active_milestone: m\nstatus: IN_PROGRESS\n---\n# PROJECT PLAN\n\n## Tasks\n\n_No tasks yet._\n"
+        ),
+    })
+    subprocess.run(["git", "checkout", "-q", "-b", "feat/wip"], cwd=repo, check=True)
+
+    seen = {}
+
+    def fake_run(**kw):
+        seen["base_ref"] = kw["base_ref"]
+        raise SystemExit(0)
+
+    monkeypatch.setattr(engine, "run", fake_run)
+
+    result = CliRunner().invoke(main, ["run", str(repo)])
+    assert "on branch 'feat/wip'" in result.output
+    assert "--base feat/wip" in result.output
+    assert seen["base_ref"] is None  # hint only; still bases on default unless --base given

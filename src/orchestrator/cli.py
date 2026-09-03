@@ -23,7 +23,7 @@ from pathlib import Path
 
 import click
 
-from orchestrator import engine, extensions, policy
+from orchestrator import engine, extensions, git, policy
 from orchestrator.debugger import DEFAULT_MAX_DEBUG_ATTEMPTS
 from orchestrator.workers.base import Worker
 
@@ -125,6 +125,16 @@ def run(repo: Path, prompt: str | None, workers: tuple[str, ...], max_debug_atte
     resolved = _resolve_workers(tuple(policy.effective_workers(project, tuple(workers))))
     mda = policy.effective_int("max_debug_attempts", project, DEFAULT_MAX_DEBUG_ATTEMPTS, max_debug_attempts)
     vt = policy.effective_int("verification_timeout_seconds", project, DEFAULT_VERIFICATION_TIMEOUT, verification_timeout)
+
+    if base_ref is None:
+        cur = git.current_branch(repo)
+        if cur != git.default_branch(repo):
+            click.echo(
+                f"note: {repo} is on branch {cur!r}, not the default branch -- tasks will "
+                f"still be based on the default branch. Pass --base {cur} to work from here "
+                f"(orchestrator-private: set `work_branch:` in repositories.yaml).",
+                err=True,
+            )
     if not quiet:
         from orchestrator.progress import register_console_progress
 

@@ -114,7 +114,7 @@ _Regenerated automatically by the orchestrator from
 
 | ID | Title | Status | Priority | Depends on |
 |---|---|---|---|---|
-| ORCH-001 | Per-project `work_branch`: runs pick the base branch from config, not a flag | READY | P1 | - |
+| ORCH-001 | Per-project `work_branch`: runs pick the base branch from config, not a flag | DONE | P1 | - |
 | ORCH-002 | Scoped-run verdict: distinguish "task failed" from "milestone incomplete" | READY | P1 | - |
 | ORCH-003 | Loud warning + recorded note when milestone acceptance criteria are undefined | READY | P2 | - |
 | ORCH-004 | Honest Codex cost display: never a misleading `$0.0000` for real work | READY | P2 | - |
@@ -218,6 +218,15 @@ None.
 - Any autonomous merge / deploy -- out of scope indefinitely (spec §19).
 
 ## Change History
+
+### 2026-09-03 -- ORCH-001 DONE
+
+`orchestrator-private` reads `work_branch:` from `repositories.yaml` and
+uses it as the default for `run --base` (explicit `--base` still wins).
+`orchestrator run` on a non-default branch with no `--base` now prints a
+one-line hint to stderr naming the branch. `seacommons` is configured
+with `work_branch: feat/media-evidence-pipeline`, so SEAC-004..010 now
+run from the right branch with no flag.
 
 ### 2026-09-03
 
