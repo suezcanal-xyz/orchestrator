@@ -150,6 +150,47 @@ def test_closed_loop_happy_path_and_cross_model_debug(demo_repo):
     assert (result.run_paths.root / "usage.json").exists()
 
 
+def test_verdict_checks_integrated_task_work_not_the_untouched_base(tmp_path):
+    """Milestone acceptance must be judged against the combined result of
+    the run's DONE task branches, not the protected branch (which is never
+    merged into in v0). Regression: a run whose tasks all pass their own
+    verification was reported NOT READY because the acceptance commands
+    were re-run against the untouched base."""
+    repo = init_repo(
+        tmp_path / "acc",
+        files={
+            "op.py": "def op():\n    return 0\n",
+            "tests/test_op.py": "from op import op\n\ndef test_op():\n    assert op() == 42\n",
+            "docs/PLAN.md": (
+                "---\nproject: acc\ncurrent_version: 0.0.0\ntarget_version: 0.1.0\n"
+                "active_milestone: m\nstatus: IN_PROGRESS\n---\n"
+                "# PROJECT PLAN\n\n## Acceptance Criteria\n\n- op() returns 42\n\n"
+                "## Verification Commands\n\n- python -m pytest tests/test_op.py -q\n"
+            ),
+        },
+    )
+    state.save_task_store(
+        repo,
+        TaskGraph([Task(
+            id="OP-1", title="make op() return 42", status="READY",
+            acceptance=["op() == 42"], verification=["python -m pytest tests/test_op.py -q"],
+            files_hint=["op.py"],
+        )]),
+    )
+
+    def fix_op(cwd):
+        (cwd / "op.py").write_text("def op():\n    return 42\n", encoding="utf-8")
+
+    worker = ScriptedWorker("claude", {("OP-1", "implement"): fix_op})
+    result = engine.run(repo=repo, prompt_text=None, implement_workers=[worker])
+
+    assert result.task_outcomes[0].status == "DONE"
+    assert result.verdict.ready is True
+    assert result.verdict.result_status.value == "READY_FOR_REVIEW"
+    # base branch itself was never modified
+    assert (repo / "op.py").read_text(encoding="utf-8") == "def op():\n    return 0\n"
+
+
 def test_task_that_never_gets_fixed_is_blocked(demo_repo):
     repo = demo_repo
     graph = TaskGraph(

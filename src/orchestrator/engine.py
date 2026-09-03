@@ -329,7 +329,28 @@ def run(
         t.status not in ("DONE", "DEFERRED") for t in graph.all()
     )
 
-    verdict = build_verdict(repo, doc, graph, timeout_per_command=verification_timeout)
+    # Judge milestone acceptance against the combined result of this run's
+    # completed work, not the untouched protected branch (nothing is merged
+    # in v0 -- spec section 22 step 17 -- so the acceptance commands would
+    # always fail if run in `repo` itself).
+    done_branches = [o.branch for o in outcomes if o.status == "DONE" and o.branch]
+    verify_root = repo
+    integration_conflicts: list[str] = []
+    if done_branches:
+        try:
+            integ = git.create_integration_worktree(repo, run_paths.run_id, done_branches)
+            verify_root = integ.worktree.path
+            integration_conflicts = integ.conflicted
+        except git.GitError:
+            verify_root = repo  # fall back to base-branch verification
+
+    verdict = build_verdict(verify_root, doc, graph, timeout_per_command=verification_timeout)
+    if integration_conflicts:
+        verdict.notes = (
+            "merge conflicts integrating completed task branches "
+            f"({', '.join(integration_conflicts)}) -- overlapping parallel work, "
+            "verdict verification ran without them"
+        )
     if not nothing_to_do:
         doc.meta.status = verdict.result_status
     doc.save(plan_path(repo))

@@ -58,6 +58,7 @@ class Verdict:
     project: str
     target_version: str
     criteria: list[CriterionResult] = field(default_factory=list)
+    notes: str = ""
 
     @property
     def ready(self) -> bool:
@@ -81,6 +82,8 @@ class Verdict:
             mark = "PASS" if c.passed else "FAIL"
             detail = f"  ({c.detail})" if c.detail else ""
             lines.append(f"{mark}  {c.description}{detail}")
+        if self.notes:
+            lines += ["", "## Notes", "", self.notes]
         lines += [
             "",
             "## Result",
