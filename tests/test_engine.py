@@ -195,22 +195,63 @@ def test_verdict_checks_integrated_task_work_not_the_untouched_base(tmp_path):
 def test_run_only_task_ids_executes_just_the_selected_task(tmp_path):
     repo = init_repo(tmp_path / "sel", files={
         "a.py": "x = 0\n", "b.py": "x = 0\n",
-        "tests/test_a.py": "from a import x\n\ndef test_a():\n    assert x == 1\n",
-        "tests/test_b.py": "from b import x\n\ndef test_b():\n    assert x == 1\n",
+        "tests/test_a.py": "import sys, pathlib\nsys.path.insert(0, str(pathlib.Path(__file__).parents[1]))\n"
+                           "from a import x\n\ndef test_a():\n    assert x == 1\n",
+        "tests/test_b.py": "import sys, pathlib\nsys.path.insert(0, str(pathlib.Path(__file__).parents[1]))\n"
+                           "from b import x\n\ndef test_b():\n    assert x == 1\n",
     })
     state.save_task_store(repo, TaskGraph([
-        Task(id="T-A", title="fix a", status="READY", acceptance=["x==1"],
+        Task(id="SEL-1", title="fix a", status="READY", acceptance=["x==1"],
              verification=["python -m pytest tests/test_a.py -q"], files_hint=["a.py"]),
-        Task(id="T-B", title="fix b", status="READY", acceptance=["x==1"],
+        Task(id="SEL-2", title="fix b", status="READY", acceptance=["x==1"],
              verification=["python -m pytest tests/test_b.py -q"], files_hint=["b.py"]),
     ]))
     w = ScriptedWorker("claude", {
-        ("T-A", "implement"): lambda cwd: (cwd / "a.py").write_text("x = 1\n", encoding="utf-8"),
-        ("T-B", "implement"): lambda cwd: (cwd / "b.py").write_text("x = 1\n", encoding="utf-8"),
+        ("SEL-1", "implement"): lambda cwd: (cwd / "a.py").write_text("x = 1\n", encoding="utf-8"),
+        ("SEL-2", "implement"): lambda cwd: (cwd / "b.py").write_text("x = 1\n", encoding="utf-8"),
     })
-    result = engine.run(repo=repo, prompt_text=None, implement_workers=[w], only_task_ids={"T-A"})
-    assert [o.task_id for o in result.task_outcomes] == ["T-A"]
-    assert ("T-B", "implement") not in w.calls
+    result = engine.run(repo=repo, prompt_text=None, implement_workers=[w], only_task_ids={"SEL-1"})
+    assert [o.task_id for o in result.task_outcomes] == ["SEL-1"]
+    assert result.task_outcomes[0].status == "DONE"
+    assert ("SEL-2", "implement") not in w.calls
+
+
+def test_scoped_run_reports_its_own_status_not_the_milestone_verdict(tmp_path):
+    """A --task run that finishes its selected task is SCOPED_OK / ok=True,
+    even though the milestone still has an un-run task the verdict marks
+    FAIL. The milestone status in PLAN.md is not touched by a scoped run."""
+    repo = init_repo(tmp_path / "scoped", files={
+        "a.py": "x = 0\n", "b.py": "x = 0\n",
+        "tests/test_a.py": "import sys, pathlib\nsys.path.insert(0, str(pathlib.Path(__file__).parents[1]))\n"
+                           "from a import x\n\ndef test_a():\n    assert x == 1\n",
+        "tests/test_b.py": "import sys, pathlib\nsys.path.insert(0, str(pathlib.Path(__file__).parents[1]))\n"
+                           "from b import x\n\ndef test_b():\n    assert x == 1\n",
+        "docs/PLAN.md": (
+            "---\nproject: scoped\ncurrent_version: 0.0.0\ntarget_version: 0.1.0\n"
+            "active_milestone: m\nstatus: IN_PROGRESS\n---\n# PROJECT PLAN\n\n## Tasks\n\n_x_\n"
+        ),
+    })
+    state.save_task_store(repo, TaskGraph([
+        Task(id="SC-1", title="fix a", status="READY", acceptance=["x==1"],
+             verification=["python -m pytest tests/test_a.py -q"], files_hint=["a.py"]),
+        Task(id="SC-2", title="fix b", status="READY", acceptance=["x==1"],
+             verification=["python -m pytest tests/test_b.py -q"], files_hint=["b.py"]),
+    ]))
+    w = ScriptedWorker("claude", {
+        ("SC-1", "implement"): lambda cwd: (cwd / "a.py").write_text("x = 1\n", encoding="utf-8"),
+    })
+    result = engine.run(repo=repo, prompt_text=None, implement_workers=[w], only_task_ids={"SC-1"})
+
+    assert result.scoped is True
+    assert result.run_status == "SCOPED_OK"
+    assert result.ok is True
+    assert result.manifest.status == "SCOPED_OK"
+    # milestone verdict still sees T-B unfinished
+    assert result.verdict.ready is False
+    assert "scoped run" in result.verdict.notes
+    # PLAN.md milestone status untouched by a scoped run
+    from orchestrator import plan as plan_mod
+    assert plan_mod.load(repo / "docs" / "PLAN.md").meta.status.value == "IN_PROGRESS"
 
 
 def test_run_only_task_ids_rejects_an_unknown_or_dependency_gap(tmp_path):

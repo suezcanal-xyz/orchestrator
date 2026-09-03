@@ -152,8 +152,11 @@ def run(repo: Path, prompt: str | None, workers: tuple[str, ...], max_debug_atte
         click.echo(f"run: {result.run_paths.root}")
         return
     click.echo(result.verdict.render())
-    click.echo(f"run: {result.run_paths.root}")
-    if result.verdict.result_status.value != "READY_FOR_REVIEW":
+    if result.scoped:
+        click.echo(f"scoped run status: {result.run_status}  "
+                   f"(milestone verdict above is for the whole milestone, not this run)")
+    click.echo(f"run: {result.run_paths.root}  status: {result.run_status}")
+    if not result.ok:
         sys.exit(1)
 
 
