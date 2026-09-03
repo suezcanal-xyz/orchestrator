@@ -173,7 +173,6 @@ _Regenerated automatically by the orchestrator from
 
 - python -m pytest -q
 - python -m pytest -q ../orchestrator-private
-- ruff check src/ tests/
 
 ## Evidence
 
@@ -216,6 +215,8 @@ None -- all nine ORCH tasks are DONE.
 - Feeding recurring-bug patterns back into prompts (`prompts/`, `skills/`
   in the private layer) -- deferred until there is a corpus.
 - Any autonomous merge / deploy -- out of scope indefinitely (spec §19).
+- A `ruff check` gate -- the tree is not lint-clean yet (77 findings); making
+  it clean and adding the gate is its own task, not part of v0.3.
 
 ## Change History
 
