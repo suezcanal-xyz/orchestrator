@@ -156,6 +156,14 @@ def run(repo: Path, prompt: str | None, workers: tuple[str, ...], max_debug_atte
         click.echo(f"scoped run status: {result.run_status}  "
                    f"(milestone verdict above is for the whole milestone, not this run)")
     click.echo(f"run: {result.run_paths.root}  status: {result.run_status}")
+    if result.run_status == "BLOCKED_SESSION_LIMIT":
+        reset = result.session_limit_hint or "an unknown time"
+        click.echo(
+            f"\nPAUSED -- an agent hit its session/usage limit (resets {reset}). "
+            f"Completed tasks are saved in the task store; re-run the same command to resume.",
+            err=True,
+        )
+        sys.exit(75)  # EX_TEMPFAIL: retry later, not a hard failure
     if not result.ok:
         sys.exit(1)
 
