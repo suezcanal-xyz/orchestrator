@@ -374,6 +374,41 @@ def test_run_base_ref_bases_worktrees_on_a_feature_branch(tmp_path):
     assert git.current_branch(repo) == "main"  # protected branch untouched
 
 
+def test_run_pauses_cleanly_on_a_reconcile_session_limit(demo_repo, monkeypatch):
+    """A reconcile that fails on a usage limit makes the run finish
+    BLOCKED_SESSION_LIMIT with a reset hint -- not raise, not run tasks."""
+    from orchestrator import reconcile as reconcile_mod
+
+    def boom(**kw):
+        raise reconcile_mod.ReconciliationError(
+            "could not reconcile prompt after 2 attempts: "
+            "You've hit your session limit -- resets 2:40pm (Europe/Rome)"
+        )
+
+    monkeypatch.setattr(reconcile_mod, "reconcile", boom)
+
+    w = ScriptedWorker("claude", {})
+    result = engine.run(repo=demo_repo, prompt_text="do something", implement_workers=[w])
+
+    assert result.run_status == "BLOCKED_SESSION_LIMIT"
+    assert result.session_limit_hint and "2:40pm" in result.session_limit_hint
+    assert result.manifest.status == "BLOCKED_SESSION_LIMIT"
+    assert result.task_outcomes == []
+    assert "PAUSED" in result.run_paths.verdict.read_text(encoding="utf-8")
+    assert not w.calls  # no task work started
+
+
+def test_run_reconcile_error_that_is_not_a_limit_still_raises(demo_repo, monkeypatch):
+    from orchestrator import reconcile as reconcile_mod
+
+    def boom(**kw):
+        raise reconcile_mod.ReconciliationError("could not reconcile prompt after 2 attempts: bad JSON")
+
+    monkeypatch.setattr(reconcile_mod, "reconcile", boom)
+    with pytest.raises(reconcile_mod.ReconciliationError):
+        engine.run(repo=demo_repo, prompt_text="x", implement_workers=[ScriptedWorker("claude", {})])
+
+
 def test_task_that_never_gets_fixed_is_blocked(demo_repo):
     repo = demo_repo
     graph = TaskGraph(

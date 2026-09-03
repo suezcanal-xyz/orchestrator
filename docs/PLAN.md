@@ -120,7 +120,7 @@ _Regenerated automatically by the orchestrator from
 | ORCH-004 | Honest Codex cost display: never a misleading `$0.0000` for real work | DONE | P2 | - |
 | ORCH-005 | Private context provider follows the doc pointers in a project's NOTES.md | DONE | P2 | - |
 | ORCH-006 | Explicit milestone gate: `## Verification Commands` run once, can block READY | DONE | P2 | ORCH-003 |
-| ORCH-007 | Recognise a worker session-limit as a first-class run status with reset time | READY | P1 | - |
+| ORCH-007 | Recognise a worker session-limit as a first-class run status with reset time | DONE | P1 | - |
 | ORCH-008 | `orchestrator run --resume <run-id>`: continue from completed tasks | READY | P2 | ORCH-007 |
 | ORCH-009 | Scheduler: serialise same-file tasks and flag likely conflicts before execution | READY | P3 | - |
 
@@ -218,6 +218,17 @@ None.
 - Any autonomous merge / deploy -- out of scope indefinitely (spec §19).
 
 ## Change History
+
+### 2026-09-03 -- ORCH-007 DONE
+
+New `orchestrator.limits.session_limit_hint()` detects a session/usage/
+rate-limit message and extracts a reset hint. `engine.run` catches a
+reconcile `ReconciliationError` that matches (and scans blocked-task
+output), skips task work, and finishes `run_status ==
+BLOCKED_SESSION_LIMIT` with `session_limit_hint` set -- rather than
+raising or spinning the debug loop. `VERDICT.md` and the manifest say
+"PAUSED ... resets <hint> ... re-run to resume". Both CLIs exit 75
+(EX_TEMPFAIL) on it. Non-limit reconcile errors still raise.
 
 ### 2026-09-03 -- ORCH-006 DONE
 

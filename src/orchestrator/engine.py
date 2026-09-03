@@ -30,6 +30,7 @@ from orchestrator import context as context_mod
 from orchestrator import evidence
 from orchestrator import extensions
 from orchestrator import git
+from orchestrator import limits
 from orchestrator import plan as plan_mod
 from orchestrator import policy as policy_mod
 from orchestrator import reconcile as reconcile_mod
@@ -145,6 +146,7 @@ class RunResult:
     usage: dict = field(default_factory=dict)
     nothing_to_do: bool = False
     scoped: bool = False  # run was narrowed with only_task_ids
+    session_limit_hint: str | None = None  # set when a worker hit a usage limit
 
     @property
     def run_status(self) -> str:
@@ -152,6 +154,8 @@ class RunResult:
         verdict. A scoped run (`--task`) that finished its selected tasks
         is `SCOPED_OK` even though the milestone as a whole is not
         `READY_FOR_REVIEW` -- the tasks it was asked to do succeeded."""
+        if self.session_limit_hint is not None:
+            return "BLOCKED_SESSION_LIMIT"
         if self.nothing_to_do:
             return "NO_WORK"
         if self.scoped:
@@ -373,19 +377,36 @@ def run(
     )
     run_wide_context = context_mod.with_providers(ctx, repo)
 
+    session_limit: str | None = None
     if prompt_text:
-        reconcile_result = reconcile_mod.reconcile(
-            cwd=repo, prompt_text=prompt_text, plan=doc, graph=graph,
-            context_block=run_wide_context, worker=implement_workers[0],
-        )
-        if reconcile_result.worker_response is not None:
+        try:
+            reconcile_result = reconcile_mod.reconcile(
+                cwd=repo, prompt_text=prompt_text, plan=doc, graph=graph,
+                context_block=run_wide_context, worker=implement_workers[0],
+            )
+        except reconcile_mod.ReconciliationError as e:
+            hint = limits.session_limit_hint(str(e))
+            if hint is None:
+                raise
+            session_limit = hint
+            reconcile_result = None
+        if reconcile_result is not None and reconcile_result.worker_response is not None:
             evidence.save_worker_response(
                 run_paths, "reconcile", "reconcile", reconcile_result.worker_response
             )
-        extensions.run_hooks("reconcile_done", repo=repo, prompt=prompt_text, result=reconcile_result)
+            if session_limit is None:
+                session_limit = limits.session_limit_hint(
+                    reconcile_result.worker_response.raw_output,
+                    reconcile_result.worker_response.summary,
+                    reconcile_result.worker_response.error,
+                )
+        if reconcile_result is not None:
+            extensions.run_hooks("reconcile_done", repo=repo, prompt=prompt_text, result=reconcile_result)
 
     batches = graph.parallelizable_batches()
-    if only_task_ids is not None:
+    if session_limit is not None:
+        batches = []  # reconcile hit a usage limit -- do not start task work
+    if only_task_ids is not None and session_limit is None:
         runnable = {t.id for b in batches for t in b}
         not_runnable = only_task_ids - runnable
         if not_runnable:
@@ -430,13 +451,27 @@ def run(
 
     outcomes.sort(key=lambda o: o.task_id)
 
+    # A worker that blocked on a usage limit mid-run: detect it in the
+    # failing verification output / the block reason so the run reports
+    # BLOCKED_SESSION_LIMIT (resumable) rather than a plain BLOCKED.
+    if session_limit is None:
+        for o in outcomes:
+            if o.status != "BLOCKED":
+                continue
+            texts = [o.reason] + [r.stdout for r in o.verification] + [r.stderr for r in o.verification]
+            hint = limits.session_limit_hint(*texts)
+            if hint is not None:
+                session_limit = hint
+                break
+
     state.save_task_store(repo, graph)
     doc.sync_task_section(graph)
 
     # "Nothing to do" is not a failure: reconcile ran, found the request
     # already satisfied (or a QUESTION/DEFER), and there were no pending
-    # tasks either. Don't mark the milestone BLOCKED for that.
-    nothing_to_do = not ordered_tasks and not any(
+    # tasks either. Don't mark the milestone BLOCKED for that. A run cut
+    # short by a usage limit is not "nothing to do".
+    nothing_to_do = session_limit is None and not ordered_tasks and not any(
         t.status not in ("DONE", "DEFERRED") for t in graph.all()
     )
 
@@ -494,14 +529,24 @@ def run(
             f"NOT READY FOR {verdict.target_version}",
             "NO WORK -- request already satisfied or no pending tasks",
         )
+    if session_limit is not None:
+        reset = "an unknown time" if session_limit == "unknown" else session_limit
+        verdict_text = verdict_text.replace(
+            f"NOT READY FOR {verdict.target_version}",
+            f"PAUSED -- an agent hit its session/usage limit (resets {reset}). "
+            f"Completed tasks are saved; re-run to resume.",
+        )
     evidence.write_verdict(run_paths, verdict_text)
 
     result = RunResult(
         manifest=None, run_paths=run_paths, plan=doc, graph=graph,  # type: ignore[arg-type]
         task_outcomes=outcomes, verdict=verdict, usage=usage_summary,
-        nothing_to_do=nothing_to_do, scoped=scoped,
+        nothing_to_do=nothing_to_do, scoped=scoped, session_limit_hint=session_limit,
     )
 
+    manifest_notes = "reconcile found nothing to do" if nothing_to_do else ""
+    if session_limit is not None:
+        manifest_notes = f"paused: agent session/usage limit (resets {session_limit})"
     manifest = state.RunManifest(
         run_id=run_paths.run_id,
         repo=str(repo),
@@ -512,7 +557,7 @@ def run(
         status=result.run_status,
         active_milestone=doc.meta.active_milestone,
         task_ids=[o.task_id for o in outcomes],
-        notes="reconcile found nothing to do" if nothing_to_do else "",
+        notes=manifest_notes,
     )
     manifest.save(run_paths)
     result.manifest = manifest
