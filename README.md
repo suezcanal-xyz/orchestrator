@@ -1,16 +1,41 @@
 # orchestrator
 
-A milestone-driven multi-agent development control plane.
+**A milestone-driven control plane for AI coding agents.** Humans set the
+milestone. Codex and Claude implement, each in its own isolated git
+worktree. Deterministic software verifies. The agent never decides it is
+done -- a command with an exit code does.
 
-`orchestrator` is not a generic agent framework. It automates one specific,
-repetitive workflow: moving an existing software project from its current
-state toward an explicitly specified target milestone, using coding agents
-(Codex, Claude) as workers, and deterministic software for planning,
-scheduling, verification and state.
+![CI](https://github.com/suezcanal-xyz/orchestrator/actions/workflows/ci.yml/badge.svg)
+&nbsp;·&nbsp; Python 3.11+ &nbsp;·&nbsp; MIT &nbsp;·&nbsp; v0.3.0
+
+`orchestrator` is **not** a generic agent framework. It automates one
+specific, repetitive workflow: moving an existing software project from
+its current state toward an explicitly specified target milestone, using
+coding agents (Codex, Claude, opencode) as workers and deterministic
+software for planning, scheduling, verification, state and evidence.
 
 The central object is not the agent. It is the project's canonical
 `docs/PLAN.md`. Agents do not define completion; tests and milestone
 acceptance criteria do.
+
+> New here? `docs/FAILURE-MODES.md` is the 5-minute version: twelve ways
+> an unsupervised coding agent fails, each with a real incident and the
+> mechanism that catches it.
+
+```text
+$ orchestrator run ../seacommons --prompt "Fix the SSRF gap in the OCR fetch path"
+[reconcile] BUG -- added: SC-042
+  SC-042: codex implementing 'Apply the SSRF/redirect/private-IP guard...'
+  SC-042: verification FAIL (attempt 1)
+  SC-042: debug attempt 1 by claude -> fixed
+  SC-042: verification PASS (attempt 2)
+  SC-042: DONE
+
+# VERDICT
+PASS  guard covers the primary OCR fetch path
+## Result
+READY FOR REVIEW   (nothing merged -- the human reviews and merges by hand)
+```
 
 ```text
 CURRENT USER PROMPT

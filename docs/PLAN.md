@@ -1,9 +1,9 @@
 ---
 project: orchestrator
-current_version: 0.2.0
+current_version: 0.3.0
 target_version: 0.3.0
-active_milestone: senior-pipeline-readiness
-status: READY_FOR_REVIEW
+active_milestone: (none -- v0.3.0 released; next milestone not yet set)
+status: RELEASED
 ---
 # PROJECT PLAN
 
@@ -29,7 +29,7 @@ repos; v0.3 is about the failure modes that only show up at scale, which
 
 ## Current Version
 
-0.2.0 -- closed development loop, onboarding + project-aware dashboards,
+0.3.0 -- released 2026-09-03. Closed development loop, onboarding + project-aware dashboards,
 opencode worker, private extension layer (policies / workers / context
 providers), per-task focused context and cost accounting, integration-
 worktree verdict, `--base` / `--task` run scoping, `docs/FAILURE-MODES.md`.
@@ -219,6 +219,15 @@ None -- all nine ORCH tasks are DONE.
   it clean and adding the gate is its own task, not part of v0.3.
 
 ## Change History
+
+### 2026-09-03 -- v0.3.0 RELEASED
+
+All nine ORCH-001..009 tasks DONE and merged. Milestone gate
+(`pytest -q` x2) green from `main`. Version bumped 0.1.0 -> 0.3.0
+(0.2 was never tagged), `CHANGELOG.md` added, GitHub release `v0.3.0`
+cut. Next milestone not yet set -- candidates in `docs/FAILURE-MODES.md`
+gaps: acceptance-criteria adequacy, parallel-path detection, flaky-
+verification detection, per-worker cooldown/reassign on a session limit.
 
 ### 2026-09-03 -- ORCH-009 DONE + milestone READY_FOR_REVIEW
 
