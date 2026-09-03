@@ -35,7 +35,7 @@ from orchestrator import policy as policy_mod
 from orchestrator import reconcile as reconcile_mod
 from orchestrator import state
 from orchestrator.debugger import DEFAULT_MAX_DEBUG_ATTEMPTS, run_debug_loop
-from orchestrator.milestone import CriterionResult, Verdict
+from orchestrator.milestone import CriterionResult, GateResult, Verdict
 from orchestrator.task_graph import Task, TaskGraph
 from orchestrator.verifier import VerificationResult, overall_passed, run_verification
 from orchestrator.workers.base import Worker
@@ -278,9 +278,11 @@ def build_verdict(
     criteria_lines = _bullets_of(doc.get_section("Acceptance Criteria"))
     verification_lines = _bullets_of(doc.get_section("Verification Commands"))
     verdict = Verdict(project=doc.meta.project, target_version=doc.meta.target_version)
+    ran: dict[str, bool] = {}
     if criteria_lines and len(criteria_lines) == len(verification_lines):
         for desc, cmd in zip(criteria_lines, verification_lines):
             r = run_verification([cmd], repo, timeout_per_command=timeout_per_command)[0]
+            ran[cmd] = r.passed
             verdict.criteria.append(
                 CriterionResult(description=desc, passed=r.passed, detail="" if r.passed else cmd)
             )
@@ -300,9 +302,21 @@ def build_verdict(
             verdict.notes = (
                 f"`## Acceptance Criteria` ({len(criteria_lines)}) and "
                 f"`## Verification Commands` ({len(verification_lines)}) are both non-empty "
-                f"but different lengths -- they are matched positionally, so the verdict "
-                f"fell back to task status. Make the two lists line up 1:1 for a real gate."
+                f"but different lengths -- they are matched positionally for the "
+                f"requirements table, so it fell back to task status. Make the two lists "
+                f"line up 1:1 to name each gate check."
             )
+
+    # Milestone gate (ORCH-006): run every `## Verification Commands` entry
+    # in the integration worktree. A gate failure blocks READY_FOR_REVIEW
+    # even when every task is DONE. Commands already run above (1:1 case)
+    # are reused, not re-run.
+    for cmd in verification_lines:
+        passed = ran.get(cmd)
+        if passed is None:
+            passed = run_verification([cmd], repo, timeout_per_command=timeout_per_command)[0].passed
+        verdict.gate.append(GateResult(command=cmd, passed=passed))
+
     return verdict
 
 

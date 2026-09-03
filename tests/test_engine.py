@@ -151,6 +151,38 @@ def test_closed_loop_happy_path_and_cross_model_debug(demo_repo):
     assert (result.run_paths.root / "usage.json").exists()
 
 
+def test_milestone_gate_blocks_ready_even_when_every_task_is_done(tmp_path):
+    """`## Verification Commands` run as an explicit gate in the
+    integration worktree: a failing gate command blocks READY_FOR_REVIEW
+    even though all tasks are DONE, and is named under ## Milestone Gate."""
+    from orchestrator import plan as plan_mod
+
+    doc = plan_mod.new_plan("g", current_version="0.0.0", target_version="0.1.0")
+    doc.set_section("Verification Commands",
+                    "- python -c \"pass\"\n- python -c \"import sys; sys.exit(2)\"")
+    graph = TaskGraph([Task(id="G-1", title="t", status="DONE")])
+
+    v = engine.build_verdict(tmp_path, doc, graph)
+    assert [g.command for g in v.gate] == ['python -c "pass"', 'python -c "import sys; sys.exit(2)"']
+    assert [g.passed for g in v.gate] == [True, False]
+    assert v.ready is False  # task DONE but gate failed
+    assert v.result_status.value == "BLOCKED"
+    r = v.render()
+    assert "## Milestone Gate" in r
+    assert 'FAIL  python -c "import sys; sys.exit(2)"' in r
+
+
+def test_milestone_gate_all_pass_with_done_tasks_is_ready(tmp_path):
+    from orchestrator import plan as plan_mod
+
+    doc = plan_mod.new_plan("g2", current_version="0.0.0", target_version="0.1.0")
+    doc.set_section("Verification Commands", "- python -c \"pass\"")
+    graph = TaskGraph([Task(id="G-1", title="t", status="DONE")])
+    v = engine.build_verdict(tmp_path, doc, graph)
+    assert v.ready is True
+    assert v.gate and all(g.passed for g in v.gate)
+
+
 def test_verdict_flags_a_milestone_with_no_acceptance_criteria(tmp_path):
     from orchestrator import plan as plan_mod
 
