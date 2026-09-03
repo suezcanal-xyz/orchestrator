@@ -107,8 +107,18 @@ single-user page -- not a product surface. Session-limit-aware
 pause/resume is designed (`docs/SESSION-LIMITS.md`) but not built. See
 `docs/ARCHITECTURE.md` for the full list of what is kept out and why.
 
+## Why
+
+`docs/FAILURE-MODES.md` is the design rationale as a catalogue: twelve ways
+an unsupervised coding agent fails -- verification theatre, partial fixes,
+dropped epistemics, removed guardrails, provenance loss, plan drift -- each
+with a real incident (most from this repo's own development), the mechanism
+that addresses it, and the gap that remains. Read it before pointing this
+at a repository that matters.
+
 ## Docs
 
+- `docs/FAILURE-MODES.md` -- the twelve failure modes and what catches each
 - `docs/ONBOARDING.md` -- dashboard and CLI first-run
 - `docs/TEAM.md` -- how a team shares one workflow
 - `docs/COST.md` -- token spend, and where the savings come from
