@@ -60,3 +60,32 @@ def test_format_cost_section_renders_total_and_breakdown(tmp_path):
     assert "## Cost" in section
     assert "$0.1230" in section
     assert "opencode" in section
+
+
+def test_cost_section_says_usage_not_reported_for_a_zero_token_codex_stage(tmp_path):
+    """A Codex stage that ran for real but reported no cost and no tokens
+    must read 'usage not reported', not '$0.0000  (0 tok)'."""
+    rp = state.init_run(_repo(tmp_path))
+    evidence.save_worker_response(
+        rp, "T-1", "implement",
+        WorkerResponse(True, "s", "", 335.0, "codex", cost_usd=0.0, extra={}),
+    )
+    summary = evidence.run_usage_summary(rp)
+    assert summary["by_worker"]["codex"]["duration_seconds"] == 335.0
+
+    section = evidence.format_cost_section(summary)
+    assert "usage not reported" in section
+    assert "codex: $0.0000" not in section
+    assert "Total: usage not reported" in section
+
+
+def test_cost_section_still_shows_a_real_cost_even_on_a_long_stage(tmp_path):
+    rp = state.init_run(_repo(tmp_path))
+    evidence.save_worker_response(
+        rp, "T-1", "implement",
+        WorkerResponse(True, "s", "", 400.0, "claude", cost_usd=0.34,
+                       extra={"usage": {"input_tokens": 20, "output_tokens": 2500, "cache_read_tokens": 0}}),
+    )
+    section = evidence.format_cost_section(evidence.run_usage_summary(rp))
+    assert "$0.3400" in section
+    assert "usage not reported" not in section

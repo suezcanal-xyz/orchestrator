@@ -78,7 +78,10 @@ def run_usage_summary(run_paths: "RunPaths") -> dict:
     `stage` is the part after the last dot before `.json` with any trailing
     `-<n>` (debug-1, debug-2) folded into `debug`.
     """
-    totals = {"cost_usd": 0.0, **{k: 0 for k in _USAGE_KEYS}}
+    def _new_slot() -> dict:
+        return {"cost_usd": 0.0, "duration_seconds": 0.0, **{k: 0 for k in _USAGE_KEYS}}
+
+    totals = _new_slot()
     by_worker: dict[str, dict] = {}
     by_stage: dict[str, dict] = {}
 
@@ -96,23 +99,50 @@ def run_usage_summary(run_paths: "RunPaths") -> dict:
         cost = data.get("cost_usd")
         if cost is None:
             cost = usage.get("cost_usd", 0.0) or 0.0
+        duration = float(data.get("duration_seconds", 0) or 0)
 
         for bucket, key in ((by_worker, worker), (by_stage, stage)):
-            slot = bucket.setdefault(key, {"cost_usd": 0.0, **{k: 0 for k in _USAGE_KEYS}})
+            slot = bucket.setdefault(key, _new_slot())
             slot["cost_usd"] += float(cost)
+            slot["duration_seconds"] += duration
             for k in _USAGE_KEYS:
                 slot[k] += int(usage.get(k, 0) or 0)
         totals["cost_usd"] += float(cost)
+        totals["duration_seconds"] += duration
         for k in _USAGE_KEYS:
             totals[k] += int(usage.get(k, 0) or 0)
 
     return {"totals": totals, "by_worker": by_worker, "by_stage": by_stage}
 
 
+# A stage that ran at least this long but reported no cost and no tokens
+# did real work with a CLI that emits no structured usage (Codex today) --
+# say so rather than print a misleading "$0.0000  (0 tok)".
+_UNREPORTED_MIN_SECONDS = 5.0
+
+
+def _slot_reported_nothing(slot: dict) -> bool:
+    counted = slot["cost_usd"] == 0.0 and all(slot[k] == 0 for k in _USAGE_KEYS)
+    return counted and slot["duration_seconds"] >= _UNREPORTED_MIN_SECONDS
+
+
+def _slot_line(name: str, slot: dict) -> str:
+    if _slot_reported_nothing(slot):
+        return (
+            f"  {name}: usage not reported "
+            f"(ran {slot['duration_seconds']:.0f}s; this CLI emits no token count)"
+        )
+    return f"  {name}: ${slot['cost_usd']:.4f}  ({slot['input_tokens'] + slot['output_tokens']:,} tok)"
+
+
 def format_cost_section(summary: dict) -> str:
     t = summary["totals"]
-    lines = ["## Cost", "", f"Total: ${t['cost_usd']:.4f}"]
     tok = t["input_tokens"] + t["output_tokens"]
+    if t["cost_usd"] == 0.0 and tok == 0 and t.get("duration_seconds", 0) >= _UNREPORTED_MIN_SECONDS:
+        total_line = "Total: usage not reported by one or more agent CLIs (see below)"
+    else:
+        total_line = f"Total: ${t['cost_usd']:.4f}"
+    lines = ["## Cost", "", total_line]
     if tok:
         lines.append(
             f"Tokens: {tok:,} ({t['input_tokens']:,} in / {t['output_tokens']:,} out"
@@ -122,10 +152,10 @@ def format_cost_section(summary: dict) -> str:
     if summary["by_worker"]:
         lines += ["", "By worker:"]
         for w, s in sorted(summary["by_worker"].items()):
-            lines.append(f"  {w}: ${s['cost_usd']:.4f}  ({s['input_tokens'] + s['output_tokens']:,} tok)")
+            lines.append(_slot_line(w, s))
     if summary["by_stage"]:
         lines += ["", "By stage:"]
         for st, s in sorted(summary["by_stage"].items()):
-            lines.append(f"  {st}: ${s['cost_usd']:.4f}  ({s['input_tokens'] + s['output_tokens']:,} tok)")
+            lines.append(_slot_line(st, s))
     lines.append("")
     return "\n".join(lines)
