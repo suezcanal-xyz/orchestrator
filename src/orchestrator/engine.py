@@ -120,6 +120,27 @@ class RunResult:
     verdict: Verdict | None = None
     usage: dict = field(default_factory=dict)
     nothing_to_do: bool = False
+    scoped: bool = False  # run was narrowed with only_task_ids
+
+    @property
+    def run_status(self) -> str:
+        """The run's own headline outcome, distinct from the milestone
+        verdict. A scoped run (`--task`) that finished its selected tasks
+        is `SCOPED_OK` even though the milestone as a whole is not
+        `READY_FOR_REVIEW` -- the tasks it was asked to do succeeded."""
+        if self.nothing_to_do:
+            return "NO_WORK"
+        if self.scoped:
+            done = bool(self.task_outcomes) and all(
+                o.status == "DONE" for o in self.task_outcomes
+            )
+            return "SCOPED_OK" if done else "BLOCKED"
+        return self.verdict.result_status.value if self.verdict else "UNKNOWN"
+
+    @property
+    def ok(self) -> bool:
+        """Whether the run met its own goal (for a CLI exit code)."""
+        return self.run_status in ("READY_FOR_REVIEW", "SCOPED_OK", "NO_WORK")
 
 
 def execute_task(
@@ -376,13 +397,28 @@ def run(
             verify_root = repo  # fall back to base-branch verification
 
     verdict = build_verdict(verify_root, doc, graph, timeout_per_command=verification_timeout)
+    scoped = only_task_ids is not None
+    notes: list[str] = []
     if integration_conflicts:
-        verdict.notes = (
+        notes.append(
             "merge conflicts integrating completed task branches "
             f"({', '.join(integration_conflicts)}) -- overlapping parallel work, "
             "verdict verification ran without them"
         )
-    if not nothing_to_do:
+    if scoped and outcomes:
+        ran = ", ".join(o.task_id for o in outcomes)
+        done = all(o.status == "DONE" for o in outcomes)
+        remaining = sum(1 for t in graph.all() if t.status not in ("DONE", "DEFERRED"))
+        notes.append(
+            f"scoped run: executed {len(outcomes)} task(s) [{ran}] -- "
+            f"{'all DONE' if done else 'NOT all DONE'}. The milestone verdict below "
+            f"still counts {remaining} task(s) outside this run's scope."
+        )
+    if notes:
+        verdict.notes = "  ".join(notes)
+    # A scoped run does not decide the milestone status: it only ran part
+    # of it. Leave doc.meta.status alone unless this was a full run.
+    if not nothing_to_do and not scoped:
         doc.meta.status = verdict.result_status
     doc.save(plan_path(repo))
     run_paths.plan_after.write_text(doc.render(), encoding="utf-8")
@@ -399,6 +435,12 @@ def run(
         )
     evidence.write_verdict(run_paths, verdict_text)
 
+    result = RunResult(
+        manifest=None, run_paths=run_paths, plan=doc, graph=graph,  # type: ignore[arg-type]
+        task_outcomes=outcomes, verdict=verdict, usage=usage_summary,
+        nothing_to_do=nothing_to_do, scoped=scoped,
+    )
+
     manifest = state.RunManifest(
         run_id=run_paths.run_id,
         repo=str(repo),
@@ -406,19 +448,16 @@ def run(
         started_at=started_at,
         protected_branch=git.default_branch(repo),
         finished_at=state.now_iso(),
-        status="NO_WORK" if nothing_to_do else verdict.result_status.value,
+        status=result.run_status,
         active_milestone=doc.meta.active_milestone,
         task_ids=[o.task_id for o in outcomes],
         notes="reconcile found nothing to do" if nothing_to_do else "",
     )
     manifest.save(run_paths)
+    result.manifest = manifest
     extensions.run_hooks("run_finished", manifest=manifest, verdict=verdict, run_paths=run_paths)
 
-    return RunResult(
-        manifest=manifest, run_paths=run_paths, plan=doc, graph=graph,
-        task_outcomes=outcomes, verdict=verdict, usage=usage_summary,
-        nothing_to_do=nothing_to_do,
-    )
+    return result
 
 
 def status(repo: Path) -> dict:

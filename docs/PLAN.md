@@ -115,7 +115,7 @@ _Regenerated automatically by the orchestrator from
 | ID | Title | Status | Priority | Depends on |
 |---|---|---|---|---|
 | ORCH-001 | Per-project `work_branch`: runs pick the base branch from config, not a flag | DONE | P1 | - |
-| ORCH-002 | Scoped-run verdict: distinguish "task failed" from "milestone incomplete" | READY | P1 | - |
+| ORCH-002 | Scoped-run verdict: distinguish "task failed" from "milestone incomplete" | DONE | P1 | - |
 | ORCH-003 | Loud warning + recorded note when milestone acceptance criteria are undefined | READY | P2 | - |
 | ORCH-004 | Honest Codex cost display: never a misleading `$0.0000` for real work | READY | P2 | - |
 | ORCH-005 | Private context provider follows the doc pointers in a project's NOTES.md | READY | P2 | - |
@@ -218,6 +218,15 @@ None.
 - Any autonomous merge / deploy -- out of scope indefinitely (spec §19).
 
 ## Change History
+
+### 2026-09-03 -- ORCH-002 DONE
+
+`RunResult` gains `scoped` + a `run_status` property: a `--task` run whose
+selected tasks all finished is `SCOPED_OK` / `ok=True` (exit 0), even
+though the milestone verdict still marks the un-run tasks FAIL. A scoped
+run no longer writes `doc.meta.status`. `VERDICT.md` carries a scope note
+("executed N task(s) ... M task(s) outside this run's scope"). Both CLIs
+print the run status and exit on `result.ok`, not on the milestone verdict.
 
 ### 2026-09-03 -- ORCH-001 DONE
 
