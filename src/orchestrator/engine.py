@@ -135,6 +135,8 @@ class TaskOutcome:
     verification: list[VerificationResult] = field(default_factory=list)
     debug_attempts: int = 0
     reviewer: str | None = None
+    review_provider: str | None = None
+    review_model: str | None = None
     review_verdict: str | None = None
     reason: str = ""
 
@@ -318,10 +320,19 @@ def execute_task(
             git.diff(wt.path, base_ref=diff_base),
             context_block,
         )
+        review_verdict = _parse_review_verdict(response)
+        response.extra = {
+            **response.extra,
+            "review": {
+                "reviewer": reviewer.name,
+                "provider": _worker_provider(reviewer),
+                "model": getattr(reviewer, "model", None),
+                "verdict": review_verdict,
+            },
+        }
         evidence.save_worker_response(
             run_paths, task.id, f"review-{review_attempt}", response
         )
-        review_verdict = _parse_review_verdict(response)
         extensions.run_hooks(
             "task_reviewed",
             task=task,
@@ -389,6 +400,8 @@ def execute_task(
             verification=results,
             debug_attempts=debug_attempts,
             reviewer=reviewer.name,
+            review_provider=_worker_provider(reviewer),
+            review_model=getattr(reviewer, "model", None),
             review_verdict=review_verdict,
             reason=reason,
         )
@@ -406,6 +419,8 @@ def execute_task(
         verification=results,
         debug_attempts=debug_attempts,
         reviewer=reviewer.name,
+        review_provider=_worker_provider(reviewer),
+        review_model=getattr(reviewer, "model", None),
         review_verdict=review_verdict,
         reason="verification and independent review passed",
     )
@@ -430,6 +445,11 @@ def _parse_review_verdict(response) -> str:
         if match:
             return match.group(1).upper()
     return "INVALID"
+
+
+def _worker_provider(worker: Worker) -> str:
+    """Best available provider label without inventing model identity."""
+    return str(getattr(worker, "provider", worker.name))
 
 
 def _review_repair_evidence(task: Task, response, diff_text: str) -> str:
@@ -752,6 +772,15 @@ def run(
             f"scoped run: executed {len(outcomes)} task(s) [{ran}] -- "
             f"{'all DONE' if done else 'NOT all DONE'}. The milestone verdict below "
             f"still counts {remaining} task(s) outside this run's scope."
+        )
+    for outcome in outcomes:
+        if outcome.reviewer is None:
+            continue
+        model = outcome.review_model or "unspecified"
+        provider = outcome.review_provider or "unspecified"
+        notes.append(
+            f"Review: {outcome.task_id} {outcome.review_verdict or 'UNKNOWN'} "
+            f"reviewer={outcome.reviewer} provider={provider} model={model}"
         )
     if notes:
         verdict.notes = "  ".join(notes)

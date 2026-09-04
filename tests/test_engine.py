@@ -4,6 +4,7 @@ the full 17-step acceptance scenario this mirrors at the engine level. The
 live version against real `codex exec` / `claude -p` is a separate,
 explicitly-invoked test (test_integration_v0_1_0_live.py)."""
 
+import json
 import re
 import subprocess
 
@@ -783,7 +784,14 @@ def test_passing_task_requires_independent_review_and_persists_evidence(demo_rep
     assert outcome.status == "DONE"
     assert outcome.reviewer == "claude"
     assert reviewer.calls == [("REV-001", "review")]
-    assert (result.run_paths.evidence_dir / "REV-001.review-1.json").exists()
+    review_path = result.run_paths.evidence_dir / "REV-001.review-1.json"
+    assert review_path.exists()
+    review_evidence = json.loads(review_path.read_text(encoding="utf-8"))
+    assert review_evidence["extra"]["review"]["reviewer"] == "claude"
+    assert (
+        "Review: REV-001 APPROVE reviewer=claude"
+        in result.run_paths.verdict.read_text(encoding="utf-8")
+    )
 
 
 def test_requested_review_changes_are_repaired_reverified_and_rereviewed(demo_repo):
