@@ -10,10 +10,11 @@ class OneShotWorker(Worker):
     name = "w"
 
     def _invoke(self, cwd, prompt, *, timeout, allow_edit, structured=False):
+        summary = "APPROVE" if "# Review task" in prompt else "done"
         return WorkerResponse(
             ok=True,
-            summary="done",
-            raw_output="",
+            summary=summary,
+            raw_output=summary,
             duration_seconds=0.01,
             worker=self.name,
         )

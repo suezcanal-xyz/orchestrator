@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -132,6 +133,8 @@ class TaskOutcome:
     commit: str | None
     verification: list[VerificationResult] = field(default_factory=list)
     debug_attempts: int = 0
+    reviewer: str | None = None
+    review_verdict: str | None = None
     reason: str = ""
 
 
@@ -180,6 +183,7 @@ def execute_task(
     context_block: str,
     implement_worker: Worker,
     debug_workers: list[Worker],
+    review_workers: list[Worker],
     max_debug_attempts: int = DEFAULT_MAX_DEBUG_ATTEMPTS,
     verification_timeout: int = 600,
     base_ref: str | None = None,
@@ -284,6 +288,61 @@ def execute_task(
             extensions.run_hooks("task_blocked", task=task, outcome=blocked_outcome)
             return blocked_outcome
 
+    reviewer = _select_reviewer(implement_worker, review_workers)
+    if reviewer is None:
+        task.status = "BLOCKED"
+        task.attempts += 1
+        blocked_outcome = TaskOutcome(
+            task_id=task.id,
+            status="BLOCKED",
+            worktree=wt.path,
+            branch=wt.branch,
+            commit=commit,
+            verification=results,
+            debug_attempts=debug_attempts,
+            reason="no review worker configured",
+        )
+        extensions.run_hooks("task_blocked", task=task, outcome=blocked_outcome)
+        return blocked_outcome
+
+    response = reviewer.review(
+        wt.path,
+        task,
+        git.diff(wt.path, base_ref=diff_base),
+        context_block,
+    )
+    evidence.save_worker_response(run_paths, task.id, "review-1", response)
+    review_verdict = _parse_review_verdict(response)
+    extensions.run_hooks(
+        "task_reviewed",
+        task=task,
+        reviewer=reviewer.name,
+        response=response,
+        verdict=review_verdict,
+    )
+    if review_verdict != "APPROVE":
+        task.status = "BLOCKED"
+        task.attempts += 1
+        reason = (
+            "review requested changes"
+            if review_verdict == "REQUEST_CHANGES"
+            else "invalid review verdict"
+        )
+        blocked_outcome = TaskOutcome(
+            task_id=task.id,
+            status="BLOCKED",
+            worktree=wt.path,
+            branch=wt.branch,
+            commit=commit,
+            verification=results,
+            debug_attempts=debug_attempts,
+            reviewer=reviewer.name,
+            review_verdict=review_verdict,
+            reason=reason,
+        )
+        extensions.run_hooks("task_blocked", task=task, outcome=blocked_outcome)
+        return blocked_outcome
+
     task.status = "DONE"
     task.attempts += 1
     done_outcome = TaskOutcome(
@@ -294,10 +353,31 @@ def execute_task(
         commit=commit,
         verification=results,
         debug_attempts=debug_attempts,
-        reason="verification passed",
+        reviewer=reviewer.name,
+        review_verdict=review_verdict,
+        reason="verification and independent review passed",
     )
     extensions.run_hooks("task_done", task=task, outcome=done_outcome)
     return done_outcome
+
+
+def _select_reviewer(
+    implement_worker: Worker, review_workers: list[Worker]
+) -> Worker | None:
+    """Prefer an independent reviewer, while allowing a single-worker setup."""
+    for worker in review_workers:
+        if worker.name != implement_worker.name:
+            return worker
+    return review_workers[0] if review_workers else None
+
+
+def _parse_review_verdict(response) -> str:
+    """Extract the only review outcomes trusted by the pipeline."""
+    for line in (response.summary + "\n" + response.raw_output).splitlines():
+        match = re.match(r"^\s*(APPROVE|REQUEST_CHANGES)\b", line, re.IGNORECASE)
+        if match:
+            return match.group(1).upper()
+    return "INVALID"
 
 
 def build_verdict(
@@ -390,6 +470,7 @@ def run(
     prompt_text: str | None,
     implement_workers: list[Worker],
     debug_workers: list[Worker] | None = None,
+    review_workers: list[Worker] | None = None,
     max_debug_attempts: int = DEFAULT_MAX_DEBUG_ATTEMPTS,
     verification_timeout: int = 600,
     base_ref: str | None = None,
@@ -530,6 +611,7 @@ def run(
                         w for w in implement_workers if w is not assignment[task.id]
                     ]
                     + (debug_workers or []),
+                    review_workers=review_workers or implement_workers,
                     max_debug_attempts=max_debug_attempts,
                     verification_timeout=verification_timeout,
                     base_ref=base_ref,

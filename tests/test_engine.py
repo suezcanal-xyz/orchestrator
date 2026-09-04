@@ -30,8 +30,14 @@ class ScriptedWorker(Worker):
         self.prompts: list[str] = []
 
     def _invoke(self, cwd, prompt, *, timeout, allow_edit, structured=False):
-        m = re.search(r"# (Debug task|Task) ([A-Z]+-\d+)", prompt)
-        stage = "debug" if m and m.group(1) == "Debug task" else "implement"
+        m = re.search(r"# (Review task|Debug task|Task) ([A-Z]+-\d+)", prompt)
+        stage = (
+            "review"
+            if m and m.group(1) == "Review task"
+            else "debug"
+            if m and m.group(1) == "Debug task"
+            else "implement"
+        )
         task_id = m.group(2) if m else "?"
         self.calls.append((task_id, stage))
         self.prompts.append(prompt)
@@ -40,8 +46,8 @@ class ScriptedWorker(Worker):
             action(cwd)
         return WorkerResponse(
             ok=True,
-            summary=f"{stage} done for {task_id}",
-            raw_output="",
+            summary="APPROVE" if stage == "review" else f"{stage} done for {task_id}",
+            raw_output="APPROVE" if stage == "review" else "",
             duration_seconds=0.01,
             worker=self.name,
         )
@@ -724,6 +730,33 @@ def test_task_that_never_gets_fixed_is_blocked(demo_repo):
     assert outcome.debug_attempts == 2
     assert "exhausted 2 debug attempts" in outcome.reason
     assert result.plan.meta.status.value == "BLOCKED"
+
+
+def test_passing_task_requires_independent_review_and_persists_evidence(demo_repo):
+    task = Task(
+        id="REV-001",
+        title="implement add correctly",
+        status="READY",
+        acceptance=["add(2, 3) == 5"],
+        verification=["python -m pytest tests/test_add.py -q"],
+        files_hint=["add_mod.py"],
+    )
+    state.save_task_store(demo_repo, TaskGraph([task]))
+    implementer = ScriptedWorker("codex", {("REV-001", "implement"): write_correct_add})
+    reviewer = ScriptedWorker("claude", {})
+
+    result = engine.run(
+        repo=demo_repo,
+        prompt_text=None,
+        implement_workers=[implementer],
+        review_workers=[reviewer],
+    )
+
+    outcome = result.task_outcomes[0]
+    assert outcome.status == "DONE"
+    assert outcome.reviewer == "claude"
+    assert reviewer.calls == [("REV-001", "review")]
+    assert (result.run_paths.evidence_dir / "REV-001.review-1.json").exists()
 
 
 class ReconcileOnlyWorker(Worker):
