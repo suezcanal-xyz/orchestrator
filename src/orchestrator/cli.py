@@ -189,6 +189,12 @@ def run(
     resolved = _resolve_workers(
         tuple(policy.effective_workers(project, tuple(workers)))
     )
+    debug_resolved = _resolve_workers(
+        tuple(policy.effective_workers(project, None, stage="debug"))
+    )
+    review_resolved = _resolve_workers(
+        tuple(policy.effective_workers(project, None, stage="review"))
+    )
     mda = policy.effective_int(
         "max_debug_attempts", project, DEFAULT_MAX_DEBUG_ATTEMPTS, max_debug_attempts
     )
@@ -216,6 +222,8 @@ def run(
         repo=repo,
         prompt_text=prompt,
         implement_workers=resolved,
+        debug_workers=debug_resolved,
+        review_workers=review_resolved,
         max_debug_attempts=mda,
         verification_timeout=vt,
         base_ref=base_ref,
