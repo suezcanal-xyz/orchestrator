@@ -75,7 +75,8 @@ def inspect(repo: Path) -> None:
 @click.argument("question")
 def analyze(repo: Path, question: str) -> None:
     """Analyze REPO read-only and emit structured evidence-backed findings."""
-    from orchestrator.analysis import AnalysisRequest, analyze as run_analysis
+    from orchestrator.analysis import AnalysisRequest
+    from orchestrator.analysis import analyze as run_analysis
 
     click.echo(
         json.dumps(
