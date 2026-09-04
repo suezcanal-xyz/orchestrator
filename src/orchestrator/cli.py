@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
 import click
@@ -67,6 +68,20 @@ def inspect(repo: Path) -> None:
     """Build and print the lightweight repository context map (no edits)."""
     ctx = engine.inspect(repo)
     click.echo(ctx.to_prompt_block(max_chars=8000))
+
+
+@main.command()
+@click.argument("repo", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.argument("question")
+def analyze(repo: Path, question: str) -> None:
+    """Analyze REPO read-only and emit structured evidence-backed findings."""
+    from orchestrator.analysis import AnalysisRequest, analyze as run_analysis
+
+    click.echo(
+        json.dumps(
+            [asdict(f) for f in run_analysis(AnalysisRequest(repo, question))], indent=2
+        )
+    )
 
 
 @main.command()
