@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -33,7 +34,12 @@ class LocalExecutor:
         return resolved
 
     def run(
-        self, command: str, *, cwd: Path, writes: bool = False
+        self,
+        command: str,
+        *,
+        cwd: Path,
+        writes: bool = False,
+        env: Mapping[str, str] | None = None,
     ) -> subprocess.CompletedProcess:
         resolved = self.validate_cwd(cwd)
         if writes and self.policy.read_only:
@@ -52,4 +58,5 @@ class LocalExecutor:
             text=True,
             check=False,
             timeout=self.policy.timeout_seconds,
+            env=dict(env) if env is not None else None,
         )

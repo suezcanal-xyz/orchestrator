@@ -1,4 +1,7 @@
+import pytest
+
 from orchestrator import verifier
+from orchestrator.executor import ExecutionPolicy, ExecutorError
 
 
 def test_passing_command(tmp_path):
@@ -80,3 +83,15 @@ def test_reverification_sees_a_same_length_source_edit(tmp_path):
     second = verifier.run_command(cmd, tmp_path)
     assert second.passed, second.stdout + second.stderr
     assert not (tmp_path / "__pycache__").exists()
+
+
+def test_verifier_rejects_execution_outside_explicit_policy_root(tmp_path):
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+
+    with pytest.raises(ExecutorError, match="outside"):
+        verifier.run_command(
+            'python -c "print(1)"',
+            tmp_path,
+            execution_policy=ExecutionPolicy(allowed_roots=[allowed]),
+        )

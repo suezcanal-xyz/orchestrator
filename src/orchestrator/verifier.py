@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+from orchestrator.executor import ExecutionPolicy, LocalExecutor
+
 # A verification command must only ever tell us pass/fail -- it must not
 # leave working-tree artifacts behind. Without this, a Python verification
 # command (pytest, a project's own test runner, ...) writes __pycache__/
@@ -61,20 +63,17 @@ def run_command(
     worker: str | None = None,
     attempt: int = 1,
     max_captured_chars: int = 20_000,
+    execution_policy: ExecutionPolicy | None = None,
 ) -> VerificationResult:
     start = time.monotonic()
     try:
-        proc = subprocess.run(
+        executor = LocalExecutor(
+            execution_policy or ExecutionPolicy(allowed_roots=[cwd], timeout_seconds=timeout)
+        )
+        proc = executor.run(
             command,
-            shell=True,
-            cwd=str(cwd),
-            check=False,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
             env=_VERIFICATION_ENV,
+            cwd=cwd,
         )
         exit_code = proc.returncode
         stdout, stderr = proc.stdout, proc.stderr
