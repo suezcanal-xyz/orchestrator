@@ -59,3 +59,11 @@ def test_registry_rejects_malformed_descriptors(tmp_path):
 
     with pytest.raises(RegistryError, match="repository"):
         ProjectRegistry.load(path)
+
+
+def test_registry_rejects_non_object_project_entries(tmp_path):
+    path = tmp_path / "projects.json"
+    path.write_text(json.dumps({"projects": ["not a descriptor"]}), encoding="utf-8")
+
+    with pytest.raises(RegistryError, match="object"):
+        ProjectRegistry.load(path)

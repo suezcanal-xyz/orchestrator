@@ -77,13 +77,10 @@ class ProjectRegistry:
             raise RegistryError(f"cannot load registry {path}: {exc}") from exc
         if not isinstance(raw, dict) or not isinstance(raw.get("projects"), list):
             raise RegistryError("registry must contain a projects list")
-        return cls(
-            [
-                ProjectDescriptor.from_dict(item)
-                for item in raw["projects"]
-                if isinstance(item, dict)
-            ]
-        )
+        projects = raw["projects"]
+        if any(not isinstance(item, dict) for item in projects):
+            raise RegistryError("each registry project entry must be an object")
+        return cls([ProjectDescriptor.from_dict(item) for item in projects])
 
     def get(self, project_id: str) -> ProjectDescriptor:
         try:
