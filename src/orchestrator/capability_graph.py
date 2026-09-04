@@ -70,6 +70,26 @@ class CapabilityGraph:
             if r.target == capability_key and r.relation == "consumes"
         ]
 
+    def dependency_chain(self, capability_key: str) -> list[str]:
+        if capability_key not in self._capabilities:
+            raise CapabilityGraphError(f"unknown capability: {capability_key}")
+        chain: list[str] = []
+        pending = [capability_key]
+        seen = {capability_key}
+        while pending:
+            current = pending.pop(0)
+            dependencies = [
+                relation.target
+                for relation in self._relations
+                if relation.source == current and relation.relation == "depends_on"
+            ]
+            for dependency in dependencies:
+                if dependency not in seen:
+                    seen.add(dependency)
+                    chain.append(dependency)
+                    pending.append(dependency)
+        return chain
+
     def _has_path(self, start: str, target: str, relation: str) -> bool:
         seen: set[str] = set()
         pending = [start]

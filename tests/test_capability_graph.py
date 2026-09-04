@@ -34,3 +34,13 @@ def test_graph_rejects_dangling_relation_and_dependency_cycle():
     graph.add_relation("alpha:one", "depends_on", "alpha:two")
     with pytest.raises(CapabilityGraphError, match="cycle"):
         graph.add_relation("alpha:two", "depends_on", "alpha:one")
+
+
+def test_graph_returns_dependency_chain():
+    graph = CapabilityGraph(
+        [_capability("one"), _capability("two"), _capability("three")]
+    )
+    graph.add_relation("alpha:one", "depends_on", "alpha:two")
+    graph.add_relation("alpha:two", "depends_on", "alpha:three")
+
+    assert graph.dependency_chain("alpha:one") == ["alpha:two", "alpha:three"]
