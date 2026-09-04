@@ -43,6 +43,7 @@ PLAN_PATH_REL = Path("docs") / "PLAN.md"
 # Character budget for the repo-map portion of a per-task context block.
 # Tunable per project via the `context_char_budget` policy (private layer).
 DEFAULT_CONTEXT_CHAR_BUDGET = 2500
+DEFAULT_MAX_REVIEW_REPAIR_ATTEMPTS = 2
 
 
 def plan_path(repo: Path) -> Path:
@@ -185,6 +186,7 @@ def execute_task(
     debug_workers: list[Worker],
     review_workers: list[Worker],
     max_debug_attempts: int = DEFAULT_MAX_DEBUG_ATTEMPTS,
+    max_review_repair_attempts: int = DEFAULT_MAX_REVIEW_REPAIR_ATTEMPTS,
     verification_timeout: int = 600,
     base_ref: str | None = None,
 ) -> TaskOutcome:
@@ -305,29 +307,79 @@ def execute_task(
         extensions.run_hooks("task_blocked", task=task, outcome=blocked_outcome)
         return blocked_outcome
 
-    response = reviewer.review(
-        wt.path,
-        task,
-        git.diff(wt.path, base_ref=diff_base),
-        context_block,
-    )
-    evidence.save_worker_response(run_paths, task.id, "review-1", response)
-    review_verdict = _parse_review_verdict(response)
-    extensions.run_hooks(
-        "task_reviewed",
-        task=task,
-        reviewer=reviewer.name,
-        response=response,
-        verdict=review_verdict,
-    )
+    review_attempt = 0
+    review_repairs = 0
+    review_verdict = "INVALID"
+    while True:
+        review_attempt += 1
+        response = reviewer.review(
+            wt.path,
+            task,
+            git.diff(wt.path, base_ref=diff_base),
+            context_block,
+        )
+        evidence.save_worker_response(
+            run_paths, task.id, f"review-{review_attempt}", response
+        )
+        review_verdict = _parse_review_verdict(response)
+        extensions.run_hooks(
+            "task_reviewed",
+            task=task,
+            reviewer=reviewer.name,
+            response=response,
+            verdict=review_verdict,
+            attempt=review_attempt,
+        )
+        if review_verdict == "APPROVE":
+            break
+        if (
+            review_verdict != "REQUEST_CHANGES"
+            or review_repairs >= max_review_repair_attempts
+        ):
+            break
+
+        review_repairs += 1
+        repair_candidates = debug_workers or [implement_worker]
+        repairer = repair_candidates[(review_repairs - 1) % len(repair_candidates)]
+        repair_evidence = _review_repair_evidence(
+            task, response, git.diff(wt.path, base_ref=diff_base)
+        )
+        repair_response = repairer.debug(wt.path, task, repair_evidence)
+        evidence.save_worker_response(
+            run_paths, task.id, f"review-repair-{review_repairs}", repair_response
+        )
+        commit = git.commit_all(
+            wt.path,
+            f"{task.id}: review repair attempt {review_repairs} ({repairer.name})",
+        )
+        results = run_verification(
+            task.verification,
+            wt.path,
+            timeout_per_command=verification_timeout,
+            commit=commit,
+            worker=repairer.name,
+            attempt=debug_attempts + review_repairs + 1,
+        )
+        evidence.save_verification(run_paths, task.id, results)
+        evidence.save_diff(run_paths, task.id, git.diff(wt.path, base_ref=diff_base))
+        passed = overall_passed(results)
+        extensions.run_hooks(
+            "task_verified",
+            task=task,
+            results=results,
+            passed=passed,
+            attempt=debug_attempts + review_repairs + 1,
+        )
+        if not passed:
+            review_verdict = "REPAIR_VERIFICATION_FAILED"
+            break
     if review_verdict != "APPROVE":
         task.status = "BLOCKED"
         task.attempts += 1
-        reason = (
-            "review requested changes"
-            if review_verdict == "REQUEST_CHANGES"
-            else "invalid review verdict"
-        )
+        reason = {
+            "REQUEST_CHANGES": "review repair limit reached",
+            "REPAIR_VERIFICATION_FAILED": "review repair verification failed",
+        }.get(review_verdict, "invalid review verdict")
         blocked_outcome = TaskOutcome(
             task_id=task.id,
             status="BLOCKED",
@@ -378,6 +430,15 @@ def _parse_review_verdict(response) -> str:
         if match:
             return match.group(1).upper()
     return "INVALID"
+
+
+def _review_repair_evidence(task: Task, response, diff_text: str) -> str:
+    """Give a repair worker the reviewer request and the current bounded diff."""
+    return (
+        f"Reviewer requested changes for {task.id}: {task.title}\n\n"
+        f"Review response:\n{response.summary}\n\n"
+        f"Current diff:\n```diff\n{diff_text[-4000:]}\n```\n"
+    )
 
 
 def build_verdict(
@@ -472,6 +533,7 @@ def run(
     debug_workers: list[Worker] | None = None,
     review_workers: list[Worker] | None = None,
     max_debug_attempts: int = DEFAULT_MAX_DEBUG_ATTEMPTS,
+    max_review_repair_attempts: int = DEFAULT_MAX_REVIEW_REPAIR_ATTEMPTS,
     verification_timeout: int = 600,
     base_ref: str | None = None,
     only_task_ids: set[str] | None = None,
@@ -613,6 +675,7 @@ def run(
                     + (debug_workers or []),
                     review_workers=review_workers or implement_workers,
                     max_debug_attempts=max_debug_attempts,
+                    max_review_repair_attempts=max_review_repair_attempts,
                     verification_timeout=verification_timeout,
                     base_ref=base_ref,
                 ): task

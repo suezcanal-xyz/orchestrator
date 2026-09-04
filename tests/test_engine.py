@@ -53,6 +53,33 @@ class ScriptedWorker(Worker):
         )
 
 
+class SequencedReviewWorker(ScriptedWorker):
+    def __init__(self, name, verdicts):
+        super().__init__(name, {})
+        self._verdicts = iter(verdicts)
+
+    def _invoke(self, cwd, prompt, *, timeout, allow_edit, structured=False):
+        if "# Review task" not in prompt:
+            return super()._invoke(
+                cwd,
+                prompt,
+                timeout=timeout,
+                allow_edit=allow_edit,
+                structured=structured,
+            )
+        task_id = re.search(r"# Review task ([A-Z]+-\d+)", prompt).group(1)
+        verdict = next(self._verdicts)
+        self.calls.append((task_id, "review"))
+        self.prompts.append(prompt)
+        return WorkerResponse(
+            ok=True,
+            summary=verdict,
+            raw_output=verdict,
+            duration_seconds=0.01,
+            worker=self.name,
+        )
+
+
 def write_correct_add(cwd):
     (cwd / "add_mod.py").write_text(
         "def add(a, b):\n    return a + b\n", encoding="utf-8"
@@ -757,6 +784,74 @@ def test_passing_task_requires_independent_review_and_persists_evidence(demo_rep
     assert outcome.reviewer == "claude"
     assert reviewer.calls == [("REV-001", "review")]
     assert (result.run_paths.evidence_dir / "REV-001.review-1.json").exists()
+
+
+def test_requested_review_changes_are_repaired_reverified_and_rereviewed(demo_repo):
+    task = Task(
+        id="REV-002",
+        title="implement add generally",
+        status="READY",
+        acceptance=["add works for arbitrary integers"],
+        verification=["python -m pytest tests/test_add.py -q"],
+        files_hint=["add_mod.py"],
+    )
+    state.save_task_store(demo_repo, TaskGraph([task]))
+    implementer = ScriptedWorker(
+        "codex",
+        {
+            ("REV-002", "implement"): lambda cwd: (cwd / "add_mod.py").write_text(
+                "def add(a, b):\n    return 5\n", encoding="utf-8"
+            )
+        },
+    )
+    repairer = ScriptedWorker("opencode", {("REV-002", "debug"): write_correct_add})
+    reviewer = SequencedReviewWorker(
+        "claude", ["REQUEST_CHANGES\n- do not hard-code 5", "APPROVE"]
+    )
+
+    result = engine.run(
+        repo=demo_repo,
+        prompt_text=None,
+        implement_workers=[implementer],
+        debug_workers=[repairer],
+        review_workers=[reviewer],
+        max_review_repair_attempts=1,
+    )
+
+    outcome = result.task_outcomes[0]
+    assert outcome.status == "DONE"
+    assert reviewer.calls == [("REV-002", "review"), ("REV-002", "review")]
+    assert repairer.calls == [("REV-002", "debug")]
+    assert (result.run_paths.evidence_dir / "REV-002.review-2.json").exists()
+
+
+def test_unresolved_review_is_blocked_when_repair_limit_is_reached(demo_repo):
+    task = Task(
+        id="REV-003",
+        title="review must be accepted",
+        status="READY",
+        acceptance=["implementation is accepted"],
+        verification=["python -m pytest tests/test_add.py -q"],
+        files_hint=["add_mod.py"],
+    )
+    state.save_task_store(demo_repo, TaskGraph([task]))
+    implementer = ScriptedWorker("codex", {("REV-003", "implement"): write_correct_add})
+    reviewer = SequencedReviewWorker(
+        "claude", ["REQUEST_CHANGES\n- add a boundary test"]
+    )
+
+    result = engine.run(
+        repo=demo_repo,
+        prompt_text=None,
+        implement_workers=[implementer],
+        review_workers=[reviewer],
+        max_review_repair_attempts=0,
+    )
+
+    outcome = result.task_outcomes[0]
+    assert outcome.status == "BLOCKED"
+    assert outcome.reason == "review repair limit reached"
+    assert outcome.review_verdict == "REQUEST_CHANGES"
 
 
 class ReconcileOnlyWorker(Worker):
