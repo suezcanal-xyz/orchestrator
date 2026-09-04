@@ -30,7 +30,6 @@ from __future__ import annotations
 import os
 import shutil
 import sys
-import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -143,7 +142,9 @@ class Worker(ABC):
 
     # -- semantic operations (spec section 6) --------------------------------
 
-    def inspect(self, cwd: Path, question: str, context_block: str, timeout: int = 300) -> WorkerResponse:
+    def inspect(
+        self, cwd: Path, question: str, context_block: str, timeout: int = 300
+    ) -> WorkerResponse:
         prompt = (
             f"{BOUNDARIES}\n\n# Inspection request\n\n## Repository context\n{context_block}\n\n"
             f"## Question\n{question}\n\nDo not edit any files. Answer plainly and concretely, "
@@ -151,7 +152,9 @@ class Worker(ABC):
         )
         return self._invoke(cwd, prompt, timeout=timeout, allow_edit=False)
 
-    def implement(self, cwd: Path, task: "Task", context_block: str, timeout: int = 1800) -> WorkerResponse:
+    def implement(
+        self, cwd: Path, task: Task, context_block: str, timeout: int = 1800
+    ) -> WorkerResponse:
         prompt = (
             f"{BOUNDARIES}\n\n# Task {task.id}: {task.title}\n\n"
             f"## Repository context\n{context_block}\n\n"
@@ -166,7 +169,12 @@ class Worker(ABC):
         return self._invoke(cwd, prompt, timeout=timeout, allow_edit=True)
 
     def review(
-        self, cwd: Path, task: "Task", diff_text: str, context_block: str, timeout: int = 900
+        self,
+        cwd: Path,
+        task: Task,
+        diff_text: str,
+        context_block: str,
+        timeout: int = 900,
     ) -> WorkerResponse:
         prompt = (
             f"{BOUNDARIES}\n\n# Review task {task.id}: {task.title}\n\n"
@@ -181,7 +189,9 @@ class Worker(ABC):
         )
         return self._invoke(cwd, prompt, timeout=timeout, allow_edit=False)
 
-    def debug(self, cwd: Path, task: "Task", evidence_block: str, timeout: int = 1800) -> WorkerResponse:
+    def debug(
+        self, cwd: Path, task: Task, evidence_block: str, timeout: int = 1800
+    ) -> WorkerResponse:
         prompt = (
             f"{BOUNDARIES}\n\n# Debug task {task.id}: {task.title}\n\n"
             f"## Original acceptance criteria\n{_bullets(task.acceptance)}\n\n"
@@ -193,10 +203,15 @@ class Worker(ABC):
         return self._invoke(cwd, prompt, timeout=timeout, allow_edit=True)
 
     def propose_tasks(
-        self, cwd: Path, prompt_text: str, plan_text: str, context_block: str, timeout: int = 600
+        self,
+        cwd: Path,
+        prompt_text: str,
+        plan_text: str,
+        context_block: str,
+        timeout: int = 600,
     ) -> WorkerResponse:
         schema_hint = (
-            '{\n'
+            "{\n"
             '  "classification": "NEW_REQUIREMENT" | "BUG" | "REGRESSION" | '
             '"CHANGE_TO_EXISTING_REQUIREMENT" | "PRIORITY_CHANGE" | "DEFER" | "REMOVE" | "QUESTION",\n'
             '  "change_history_entry": "one paragraph, plain text, describing what was found and decided",\n'
@@ -217,4 +232,6 @@ class Worker(ABC):
             f"the JSON:\n\n{schema_hint}\n\n"
             f'"tasks" may be empty if classification is QUESTION or DEFER. Keep tasks atomic and testable.'
         )
-        return self._invoke(cwd, prompt, timeout=timeout, allow_edit=False, structured=True)
+        return self._invoke(
+            cwd, prompt, timeout=timeout, allow_edit=False, structured=True
+        )

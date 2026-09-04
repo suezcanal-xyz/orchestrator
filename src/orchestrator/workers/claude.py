@@ -7,7 +7,12 @@ import subprocess
 import time
 from pathlib import Path
 
-from orchestrator.workers.base import Worker, WorkerResponse, _safe_subprocess_env, resolve_executable
+from orchestrator.workers.base import (
+    Worker,
+    WorkerResponse,
+    _safe_subprocess_env,
+    resolve_executable,
+)
 
 
 class ClaudeWorker(Worker):
@@ -25,15 +30,21 @@ class ClaudeWorker(Worker):
         allow_edit: bool,
         structured: bool = False,
     ) -> WorkerResponse:
-        tools = "Bash Edit Write Read Grep Glob" if allow_edit else "Read Grep Glob Bash"
+        tools = (
+            "Bash Edit Write Read Grep Glob" if allow_edit else "Read Grep Glob Bash"
+        )
         exe, use_shell = resolve_executable(self.executable)
         permission_mode = "bypassPermissions"
 
         args = [
-            exe, "-p",
-            "--permission-mode", permission_mode,
-            "--allowedTools", tools,
-            "--output-format", "json",
+            exe,
+            "-p",
+            "--permission-mode",
+            permission_mode,
+            "--allowedTools",
+            tools,
+            "--output-format",
+            "json",
             # no positional prompt: piped via stdin instead, below -- avoids
             # Windows cmd.exe command-line length/quoting limits on a
             # multi-KB prompt
@@ -46,6 +57,7 @@ class ClaudeWorker(Worker):
                 cwd=str(cwd),
                 capture_output=True,
                 text=True,
+                check=False,
                 encoding="utf-8",
                 errors="replace",
                 env=_safe_subprocess_env(),
@@ -77,7 +89,9 @@ class ClaudeWorker(Worker):
                 raw_output=raw + proc.stderr,
                 duration_seconds=duration,
                 worker=self.name,
-                error=None if ok else f"claude -p exited {proc.returncode}: could not parse JSON output",
+                error=None
+                if ok
+                else f"claude -p exited {proc.returncode}: could not parse JSON output",
             )
 
         is_error = bool(data.get("is_error"))
@@ -98,5 +112,9 @@ class ClaudeWorker(Worker):
             session_id=data.get("session_id"),
             cost_usd=data.get("total_cost_usd"),
             error=None if ok else str(data.get("result") or f"exit {proc.returncode}"),
-            extra={"num_turns": data.get("num_turns"), "subtype": data.get("subtype"), "usage": usage},
+            extra={
+                "num_turns": data.get("num_turns"),
+                "subtype": data.get("subtype"),
+                "usage": usage,
+            },
         )

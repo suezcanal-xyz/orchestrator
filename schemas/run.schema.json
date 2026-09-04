@@ -13,11 +13,21 @@
     "finished_at": { "type": ["string", "null"] },
     "status": {
       "type": "string",
-      "enum": ["IN_PROGRESS", "READY_FOR_REVIEW", "BLOCKED", "FAILED", "RELEASED"]
+      "enum": [
+        "IN_PROGRESS",
+        "READY_FOR_REVIEW",
+        "BLOCKED",
+        "FAILED",
+        "RELEASED",
+        "BLOCKED_SESSION_LIMIT",
+        "SCOPED_OK",
+        "NO_WORK"
+      ]
     },
     "active_milestone": { "type": ["string", "null"] },
     "task_ids": { "type": "array", "items": { "type": "string" } },
     "protected_branch": { "type": "string" },
-    "notes": { "type": "string" }
+    "notes": { "type": "string" },
+    "resumed_from": { "type": ["string", "null"] }
   }
 }

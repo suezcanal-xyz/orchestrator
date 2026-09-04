@@ -27,7 +27,8 @@ naturally thread-safe (e.g. writing to a shared file) must lock itself.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 WorkerFactory = Callable[[], Any]
 VerifierFn = Callable[..., Any]
@@ -95,7 +96,10 @@ def run_hooks(event: str, *args: Any, **kwargs: Any) -> None:
         except Exception as e:  # noqa: BLE001 -- deliberately broad, see docstring
             import sys
 
-            print(f"[orchestrator] hook {fn!r} for event {event!r} raised: {e!r}", file=sys.stderr)
+            print(
+                f"[orchestrator] hook {fn!r} for event {event!r} raised: {e!r}",
+                file=sys.stderr,
+            )
 
 
 def reset_extensions() -> None:

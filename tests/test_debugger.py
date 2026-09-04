@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from orchestrator.debugger import classify_failure, run_debug_loop
 from orchestrator.task_graph import Task
 from orchestrator.verifier import VerificationResult
@@ -18,7 +16,11 @@ class FakeWorker(Worker):
         summary = self._summaries[min(self._calls, len(self._summaries) - 1)]
         self._calls += 1
         return WorkerResponse(
-            ok=True, summary=summary, raw_output=summary, duration_seconds=0.01, worker=self.name
+            ok=True,
+            summary=summary,
+            raw_output=summary,
+            duration_seconds=0.01,
+            worker=self.name,
         )
 
 
@@ -28,12 +30,14 @@ def make_task():
         title="Fix geolocation",
         status="IN_PROGRESS",
         acceptance=["coordinates resolve"],
-        verification=["python -c \"1\""],
+        verification=['python -c "1"'],
     )
 
 
 def _fail_result(msg="AssertionError: coords wrong"):
-    return VerificationResult(command="pytest tests/x", exit_code=1, passed=False, stderr=msg)
+    return VerificationResult(
+        command="pytest tests/x", exit_code=1, passed=False, stderr=msg
+    )
 
 
 def _pass_result():
@@ -41,15 +45,23 @@ def _pass_result():
 
 
 def test_classify_failure_matches_assertion():
-    assert classify_failure([_fail_result("AssertionError: boom")]) == "ASSERTION_FAILURE"
+    assert (
+        classify_failure([_fail_result("AssertionError: boom")]) == "ASSERTION_FAILURE"
+    )
 
 
 def test_classify_failure_matches_import_error():
-    assert classify_failure([_fail_result("ModuleNotFoundError: no module named x")]) == "MISSING_DEPENDENCY_OR_IMPORT"
+    assert (
+        classify_failure([_fail_result("ModuleNotFoundError: no module named x")])
+        == "MISSING_DEPENDENCY_OR_IMPORT"
+    )
 
 
 def test_classify_failure_unknown_default():
-    assert classify_failure([_fail_result("something bizarre happened")]) == "UNKNOWN_FAILURE"
+    assert (
+        classify_failure([_fail_result("something bizarre happened")])
+        == "UNKNOWN_FAILURE"
+    )
 
 
 def test_debug_loop_returns_fixed_immediately_if_already_passing(tmp_path):
@@ -86,7 +98,10 @@ def test_debug_loop_fixes_on_second_attempt_and_alternates_workers(tmp_path):
         task=make_task(),
         initial_results=[_fail_result()],
         verification_commands=["pytest tests/x"],
-        debugger_workers=[FakeWorker("claude", ["diagnosis 1"]), FakeWorker("codex", ["fix applied"])],
+        debugger_workers=[
+            FakeWorker("claude", ["diagnosis 1"]),
+            FakeWorker("codex", ["fix applied"]),
+        ],
         run_verification_fn=run_verification_fn,
         get_diff_fn=lambda: "diff --git a b",
         commit_fn=commit_fn,

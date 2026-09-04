@@ -25,6 +25,12 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: Configure git identity for test fixtures
+      - name: Lint format
+        run: ruff format --check .
+
+      - name: Lint
+        run: ruff check .
+
         run: |
           git config --global user.email "ci@example.com"
           git config --global user.name "CI"

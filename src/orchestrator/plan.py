@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import yaml
@@ -66,15 +66,19 @@ class PlanDocument:
 
     def append_to_section(self, name: str, line: str) -> None:
         current = self.sections.get(name, "").rstrip()
-        self.sections[name] = (current + "\n" + line).strip() + "\n" if current else line.strip() + "\n"
+        self.sections[name] = (
+            (current + "\n" + line).strip() + "\n" if current else line.strip() + "\n"
+        )
         if name not in self.order:
             self.order.append(name)
 
     def append_change_history(self, text: str, when: date | None = None) -> None:
-        when = when or date.today()
+        when = when or datetime.now(UTC).date()
         entry = f"### {when.isoformat()}\n\n{text.strip()}\n"
         current = self.sections.get("Change History", "").rstrip()
-        self.sections["Change History"] = (current + "\n\n" + entry).strip() + "\n" if current else entry
+        self.sections["Change History"] = (
+            (current + "\n\n" + entry).strip() + "\n" if current else entry
+        )
         if "Change History" not in self.order:
             self.order.append("Change History")
 
@@ -84,7 +88,10 @@ class PlanDocument:
         if not tasks:
             self.set_section("Tasks", "_No tasks yet._")
             return
-        lines = ["| ID | Title | Status | Priority | Depends on |", "|---|---|---|---|---|"]
+        lines = [
+            "| ID | Title | Status | Priority | Depends on |",
+            "|---|---|---|---|---|",
+        ]
         for t in tasks:
             deps = ", ".join(t.depends_on) or "-"
             lines.append(f"| {t.id} | {t.title} | {t.status} | {t.priority} | {deps} |")
@@ -112,7 +119,7 @@ def parse(text: str) -> PlanDocument:
         raise PlanError("PLAN.md is missing the YAML frontmatter block")
     fm_raw = yaml.safe_load(m.group(1)) or {}
     meta = ProjectMeta.from_dict(fm_raw)
-    body = text[m.end():]
+    body = text[m.end() :]
 
     headers = list(_SECTION_RE.finditer(body))
     sections: dict[str, str] = {}

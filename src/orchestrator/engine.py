@@ -27,14 +27,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from orchestrator import context as context_mod
-from orchestrator import evidence
-from orchestrator import extensions
-from orchestrator import git
-from orchestrator import limits
+from orchestrator import evidence, extensions, git, limits, state
 from orchestrator import plan as plan_mod
 from orchestrator import policy as policy_mod
 from orchestrator import reconcile as reconcile_mod
-from orchestrator import state
 from orchestrator.debugger import DEFAULT_MAX_DEBUG_ATTEMPTS, run_debug_loop
 from orchestrator.milestone import CriterionResult, GateResult, Verdict
 from orchestrator.task_graph import Task, TaskGraph
@@ -52,7 +48,9 @@ def plan_path(repo: Path) -> Path:
     return repo / PLAN_PATH_REL
 
 
-def load_or_create_plan(repo: Path, project_name: str | None = None) -> plan_mod.PlanDocument:
+def load_or_create_plan(
+    repo: Path, project_name: str | None = None
+) -> plan_mod.PlanDocument:
     p = plan_path(repo)
     if p.exists():
         return plan_mod.load(p)
@@ -63,7 +61,7 @@ def _bullets_of(text: str) -> list[str]:
     out = []
     for line in text.splitlines():
         line = line.strip()
-        if line.startswith("- ") or line.startswith("* "):
+        if line.startswith(("- ", "* ")):
             out.append(line[2:].strip())
     return out
 
@@ -118,7 +116,9 @@ def _flag_undefined_criteria(doc: plan_mod.PlanDocument) -> None:
         doc.append_to_section("Blockers", f"- {_UNDEFINED_CRITERIA_BLOCKER}")
     elif not missing and "Milestone acceptance not defined" in body:
         kept = "\n".join(
-            ln for ln in body.splitlines() if "Milestone acceptance not defined" not in ln
+            ln
+            for ln in body.splitlines()
+            if "Milestone acceptance not defined" not in ln
         ).strip()
         doc.set_section("Blockers", kept or "None.")
 
@@ -212,17 +212,31 @@ def execute_task(
     response = implement_worker.implement(wt.path, task, context_block)
     evidence.save_worker_response(run_paths, task.id, "implement", response)
 
-    commit = git.commit_all(wt.path, f"{task.id}: {task.title}\n\nImplemented by {implement_worker.name}.")
+    commit = git.commit_all(
+        wt.path, f"{task.id}: {task.title}\n\nImplemented by {implement_worker.name}."
+    )
     evidence.save_diff(run_paths, task.id, git.diff(wt.path, base_ref=diff_base))
-    extensions.run_hooks("task_implemented", task=task, worker=implement_worker.name, response=response, commit=commit)
+    extensions.run_hooks(
+        "task_implemented",
+        task=task,
+        worker=implement_worker.name,
+        response=response,
+        commit=commit,
+    )
 
     results = run_verification(
-        task.verification, wt.path, timeout_per_command=verification_timeout,
-        commit=commit, worker=implement_worker.name, attempt=1,
+        task.verification,
+        wt.path,
+        timeout_per_command=verification_timeout,
+        commit=commit,
+        worker=implement_worker.name,
+        attempt=1,
     )
     evidence.save_verification(run_paths, task.id, results)
     passed = overall_passed(results)
-    extensions.run_hooks("task_verified", task=task, results=results, passed=passed, attempt=1)
+    extensions.run_hooks(
+        "task_verified", task=task, results=results, passed=passed, attempt=1
+    )
 
     debug_attempts = 0
     if not passed:
@@ -233,15 +247,22 @@ def execute_task(
             verification_commands=task.verification,
             debugger_workers=debug_workers or [implement_worker],
             run_verification_fn=lambda: run_verification(
-                task.verification, wt.path, timeout_per_command=verification_timeout, worker="debug"
+                task.verification,
+                wt.path,
+                timeout_per_command=verification_timeout,
+                worker="debug",
             ),
             get_diff_fn=lambda: git.diff(wt.path, base_ref=diff_base),
             commit_fn=lambda msg: git.commit_all(wt.path, msg),
             max_attempts=max_debug_attempts,
-            on_attempt=lambda record: extensions.run_hooks("task_debug_attempt", task=task, record=record),
+            on_attempt=lambda record: extensions.run_hooks(
+                "task_debug_attempt", task=task, record=record
+            ),
         )
         for i, a in enumerate(outcome.attempts, start=1):
-            evidence.save_worker_response(run_paths, task.id, f"debug-{i}", a.debugger_response)
+            evidence.save_worker_response(
+                run_paths, task.id, f"debug-{i}", a.debugger_response
+            )
             evidence.save_verification(run_paths, task.id, a.results_after)
         debug_attempts = len(outcome.attempts)
         results = outcome.final_results
@@ -251,8 +272,14 @@ def execute_task(
             task.status = "BLOCKED"
             task.attempts += 1
             blocked_outcome = TaskOutcome(
-                task_id=task.id, status="BLOCKED", worktree=wt.path, branch=wt.branch, commit=commit,
-                verification=results, debug_attempts=debug_attempts, reason=outcome.reason,
+                task_id=task.id,
+                status="BLOCKED",
+                worktree=wt.path,
+                branch=wt.branch,
+                commit=commit,
+                verification=results,
+                debug_attempts=debug_attempts,
+                reason=outcome.reason,
             )
             extensions.run_hooks("task_blocked", task=task, outcome=blocked_outcome)
             return blocked_outcome
@@ -260,15 +287,24 @@ def execute_task(
     task.status = "DONE"
     task.attempts += 1
     done_outcome = TaskOutcome(
-        task_id=task.id, status="DONE", worktree=wt.path, branch=wt.branch, commit=commit,
-        verification=results, debug_attempts=debug_attempts, reason="verification passed",
+        task_id=task.id,
+        status="DONE",
+        worktree=wt.path,
+        branch=wt.branch,
+        commit=commit,
+        verification=results,
+        debug_attempts=debug_attempts,
+        reason="verification passed",
     )
     extensions.run_hooks("task_done", task=task, outcome=done_outcome)
     return done_outcome
 
 
 def build_verdict(
-    repo: Path, doc: plan_mod.PlanDocument, graph: TaskGraph, timeout_per_command: int = 600
+    repo: Path,
+    doc: plan_mod.PlanDocument,
+    graph: TaskGraph,
+    timeout_per_command: int = 600,
 ) -> Verdict:
     """Compare repository state against milestone acceptance criteria (spec section 19).
 
@@ -285,16 +321,24 @@ def build_verdict(
     ran: dict[str, bool] = {}
     if criteria_lines and len(criteria_lines) == len(verification_lines):
         for desc, cmd in zip(criteria_lines, verification_lines):
-            r = run_verification([cmd], repo, timeout_per_command=timeout_per_command)[0]
+            r = run_verification([cmd], repo, timeout_per_command=timeout_per_command)[
+                0
+            ]
             ran[cmd] = r.passed
             verdict.criteria.append(
-                CriterionResult(description=desc, passed=r.passed, detail="" if r.passed else cmd)
+                CriterionResult(
+                    description=desc, passed=r.passed, detail="" if r.passed else cmd
+                )
             )
     else:
         for t in sorted(graph.all(), key=lambda t: t.id):
             if t.status == "DEFERRED":
                 continue
-            verdict.criteria.append(CriterionResult(description=f"{t.id}: {t.title}", passed=t.status == "DONE"))
+            verdict.criteria.append(
+                CriterionResult(
+                    description=f"{t.id}: {t.title}", passed=t.status == "DONE"
+                )
+            )
         missing = _plan_criteria_undefined(doc)
         if missing:
             verdict.notes = (
@@ -318,7 +362,9 @@ def build_verdict(
     for cmd in verification_lines:
         passed = ran.get(cmd)
         if passed is None:
-            passed = run_verification([cmd], repo, timeout_per_command=timeout_per_command)[0].passed
+            passed = run_verification(
+                [cmd], repo, timeout_per_command=timeout_per_command
+            )[0].passed
         verdict.gate.append(GateResult(command=cmd, passed=passed))
 
     return verdict
@@ -328,7 +374,8 @@ def _plan_criteria_undefined(doc: plan_mod.PlanDocument) -> list[str]:
     """Canonical sections a milestone needs before its verdict means
     anything, that are still empty / `_Not yet defined._`."""
     return [
-        s for s in ("Acceptance Criteria", "Verification Commands")
+        s
+        for s in ("Acceptance Criteria", "Verification Commands")
         if not _bullets_of(doc.get_section(s))
     ]
 
@@ -385,7 +432,9 @@ def run(
     doc = load_or_create_plan(repo)
     graph = state.load_task_store(repo)
     if prior_plan_before is not None:
-        run_paths.plan_before.write_text(prior_plan_before.read_text(encoding="utf-8"), encoding="utf-8")
+        run_paths.plan_before.write_text(
+            prior_plan_before.read_text(encoding="utf-8"), encoding="utf-8"
+        )
     else:
         run_paths.plan_before.write_text(doc.render(), encoding="utf-8")
 
@@ -400,8 +449,12 @@ def run(
     if prompt_text:
         try:
             reconcile_result = reconcile_mod.reconcile(
-                cwd=repo, prompt_text=prompt_text, plan=doc, graph=graph,
-                context_block=run_wide_context, worker=implement_workers[0],
+                cwd=repo,
+                prompt_text=prompt_text,
+                plan=doc,
+                graph=graph,
+                context_block=run_wide_context,
+                worker=implement_workers[0],
             )
         except reconcile_mod.ReconciliationError as e:
             hint = limits.session_limit_hint(str(e))
@@ -409,7 +462,10 @@ def run(
                 raise
             session_limit = hint
             reconcile_result = None
-        if reconcile_result is not None and reconcile_result.worker_response is not None:
+        if (
+            reconcile_result is not None
+            and reconcile_result.worker_response is not None
+        ):
             evidence.save_worker_response(
                 run_paths, "reconcile", "reconcile", reconcile_result.worker_response
             )
@@ -420,7 +476,9 @@ def run(
                     reconcile_result.worker_response.error,
                 )
         if reconcile_result is not None:
-            extensions.run_hooks("reconcile_done", repo=repo, prompt=prompt_text, result=reconcile_result)
+            extensions.run_hooks(
+                "reconcile_done", repo=repo, prompt=prompt_text, result=reconcile_result
+            )
 
     batches = graph.parallelizable_batches()
     if session_limit is not None:
@@ -446,8 +504,12 @@ def run(
         extensions.run_hooks("possible_overlap", task_a=a, task_b=b, path=path)
 
     extensions.run_hooks(
-        "run_started", repo=repo, run_id=run_paths.run_id, prompt=prompt_text,
-        task_ids=[t.id for t in ordered_tasks], batch_count=len(batches),
+        "run_started",
+        repo=repo,
+        run_id=run_paths.run_id,
+        prompt=prompt_text,
+        task_ids=[t.id for t in ordered_tasks],
+        batch_count=len(batches),
     )
 
     outcomes: list[TaskOutcome] = []
@@ -464,7 +526,10 @@ def run(
                         ctx, task.files_hint, char_budget=char_budget, repo_path=repo
                     ),
                     implement_worker=assignment[task.id],
-                    debug_workers=[w for w in implement_workers if w is not assignment[task.id]] + (debug_workers or []),
+                    debug_workers=[
+                        w for w in implement_workers if w is not assignment[task.id]
+                    ]
+                    + (debug_workers or []),
                     max_debug_attempts=max_debug_attempts,
                     verification_timeout=verification_timeout,
                     base_ref=base_ref,
@@ -483,7 +548,11 @@ def run(
         for o in outcomes:
             if o.status != "BLOCKED":
                 continue
-            texts = [o.reason] + [r.stdout for r in o.verification] + [r.stderr for r in o.verification]
+            texts = (
+                [o.reason]
+                + [r.stdout for r in o.verification]
+                + [r.stderr for r in o.verification]
+            )
             hint = limits.session_limit_hint(*texts)
             if hint is not None:
                 session_limit = hint
@@ -496,8 +565,10 @@ def run(
     # already satisfied (or a QUESTION/DEFER), and there were no pending
     # tasks either. Don't mark the milestone BLOCKED for that. A run cut
     # short by a usage limit is not "nothing to do".
-    nothing_to_do = session_limit is None and not ordered_tasks and not any(
-        t.status not in ("DONE", "DEFERRED") for t in graph.all()
+    nothing_to_do = (
+        session_limit is None
+        and not ordered_tasks
+        and not any(t.status not in ("DONE", "DEFERRED") for t in graph.all())
     )
 
     # Judge milestone acceptance against the combined result of this run's
@@ -517,7 +588,9 @@ def run(
         except git.GitError:
             verify_root = repo  # fall back to base-branch verification
 
-    verdict = build_verdict(verify_root, doc, graph, timeout_per_command=verification_timeout)
+    verdict = build_verdict(
+        verify_root, doc, graph, timeout_per_command=verification_timeout
+    )
     scoped = only_task_ids is not None
     notes: list[str] = [verdict.notes] if verdict.notes else []
     if integration_conflicts:
@@ -564,16 +637,25 @@ def run(
     evidence.write_verdict(run_paths, verdict_text)
 
     result = RunResult(
-        manifest=None, run_paths=run_paths, plan=doc, graph=graph,  # type: ignore[arg-type]
-        task_outcomes=outcomes, verdict=verdict, usage=usage_summary,
-        nothing_to_do=nothing_to_do, scoped=scoped, session_limit_hint=session_limit,
+        manifest=None,
+        run_paths=run_paths,
+        plan=doc,
+        graph=graph,  # type: ignore[arg-type]
+        task_outcomes=outcomes,
+        verdict=verdict,
+        usage=usage_summary,
+        nothing_to_do=nothing_to_do,
+        scoped=scoped,
+        session_limit_hint=session_limit,
     )
 
     manifest_notes = "reconcile found nothing to do" if nothing_to_do else ""
     if session_limit is not None:
         manifest_notes = f"paused: agent session/usage limit (resets {session_limit})"
     if resume_from is not None:
-        manifest_notes = (manifest_notes + "  " if manifest_notes else "") + f"resumed from run {resume_from}"
+        manifest_notes = (
+            manifest_notes + "  " if manifest_notes else ""
+        ) + f"resumed from run {resume_from}"
     manifest = state.RunManifest(
         run_id=run_paths.run_id,
         repo=str(repo),
@@ -589,7 +671,9 @@ def run(
     )
     manifest.save(run_paths)
     result.manifest = manifest
-    extensions.run_hooks("run_finished", manifest=manifest, verdict=verdict, run_paths=run_paths)
+    extensions.run_hooks(
+        "run_finished", manifest=manifest, verdict=verdict, run_paths=run_paths
+    )
 
     return result
 

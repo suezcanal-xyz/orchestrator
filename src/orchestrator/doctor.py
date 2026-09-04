@@ -33,11 +33,19 @@ class DoctorEntry:
     raw: str = ""
 
 
-def _run_local(exe: str, extra_args: list[str], use_shell: bool, timeout: int = 20) -> tuple[bool, str]:
+def _run_local(
+    exe: str, extra_args: list[str], use_shell: bool, timeout: int = 20
+) -> tuple[bool, str]:
     try:
         proc = subprocess.run(
-            [exe, *extra_args], capture_output=True, text=True, encoding="utf-8", errors="replace",
-            timeout=timeout, shell=use_shell,
+            [exe, *extra_args],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            shell=use_shell,
+            check=False,
         )
         return proc.returncode == 0, (proc.stdout + proc.stderr).strip()
     except (subprocess.TimeoutExpired, OSError) as e:
@@ -49,7 +57,7 @@ def _worker_registered(name: str) -> bool:
 
 
 def check_codex(exe: str, use_shell: bool) -> DoctorEntry:
-    ok, out = _run_local(exe, ["login", "status"], use_shell)
+    _ok, out = _run_local(exe, ["login", "status"], use_shell)
     note = out.splitlines()[0] if out else "could not determine login status"
     return DoctorEntry("codex", True, exe, _worker_registered("codex"), note, out)
 
@@ -85,13 +93,23 @@ def run_doctor(clis: tuple[str, ...] = KNOWN_CLIS) -> list[DoctorEntry]:
         try:
             exe, use_shell = resolve_executable(name)
         except WorkerError:
-            entries.append(DoctorEntry(name, False, None, _worker_registered(name), "not found on PATH"))
+            entries.append(
+                DoctorEntry(
+                    name, False, None, _worker_registered(name), "not found on PATH"
+                )
+            )
             continue
         checker = _CHECKERS.get(name)
         entries.append(
             checker(exe, use_shell)
             if checker
-            else DoctorEntry(name, True, exe, _worker_registered(name), "no local health check defined for this CLI yet")
+            else DoctorEntry(
+                name,
+                True,
+                exe,
+                _worker_registered(name),
+                "no local health check defined for this CLI yet",
+            )
         )
     return entries
 
@@ -102,7 +120,11 @@ def format_report(entries: list[DoctorEntry]) -> str:
         if not e.found:
             lines.append(f"{e.name:<10} NOT FOUND")
             continue
-        worker = "worker available" if e.worker_registered else "NO WORKER REGISTERED -- see docs/DEVELOPMENT.md"
+        worker = (
+            "worker available"
+            if e.worker_registered
+            else "NO WORKER REGISTERED -- see docs/DEVELOPMENT.md"
+        )
         lines.append(f"{e.name:<10} found   {e.path}")
         lines.append(f"{'':<10}         {e.auth_note}")
         lines.append(f"{'':<10}         {worker}")

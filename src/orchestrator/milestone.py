@@ -25,13 +25,15 @@ class ProjectMeta:
     status: MilestoneStatus = MilestoneStatus.IN_PROGRESS
 
     @classmethod
-    def from_dict(cls, data: dict) -> "ProjectMeta":
+    def from_dict(cls, data: dict) -> ProjectMeta:
         return cls(
             project=data["project"],
             current_version=str(data.get("current_version", "0.0.0")),
             target_version=str(data.get("target_version", "0.0.0")),
             active_milestone=data.get("active_milestone", ""),
-            status=MilestoneStatus(data.get("status", MilestoneStatus.IN_PROGRESS.value)),
+            status=MilestoneStatus(
+                data.get("status", MilestoneStatus.IN_PROGRESS.value)
+            ),
         )
 
     def to_dict(self) -> dict:
@@ -78,7 +80,9 @@ class Verdict:
 
     @property
     def result_status(self) -> MilestoneStatus:
-        return MilestoneStatus.READY_FOR_REVIEW if self.ready else MilestoneStatus.BLOCKED
+        return (
+            MilestoneStatus.READY_FOR_REVIEW if self.ready else MilestoneStatus.BLOCKED
+        )
 
     def render(self) -> str:
         lines = [
@@ -95,8 +99,13 @@ class Verdict:
             detail = f"  ({c.detail})" if c.detail else ""
             lines.append(f"{mark}  {c.description}{detail}")
         if self.gate:
-            lines += ["", "## Milestone Gate", "",
-                      "(docs/PLAN.md `## Verification Commands`, run in the integration worktree)", ""]
+            lines += [
+                "",
+                "## Milestone Gate",
+                "",
+                "(docs/PLAN.md `## Verification Commands`, run in the integration worktree)",
+                "",
+            ]
             for g in self.gate:
                 lines.append(f"{'PASS' if g.passed else 'FAIL'}  {g.command}")
         if self.notes:
@@ -105,7 +114,9 @@ class Verdict:
             "",
             "## Result",
             "",
-            "READY FOR REVIEW" if self.ready else f"NOT READY FOR {self.target_version}",
+            "READY FOR REVIEW"
+            if self.ready
+            else f"NOT READY FOR {self.target_version}",
             "",
         ]
         return "\n".join(lines)

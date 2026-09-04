@@ -2,7 +2,9 @@ from orchestrator.limits import session_limit_hint
 
 
 def test_detects_claude_session_limit_with_reset_time():
-    hint = session_limit_hint("Error: You've hit your session limit -- resets 2:40pm (Europe/Rome)")
+    hint = session_limit_hint(
+        "Error: You've hit your session limit -- resets 2:40pm (Europe/Rome)"
+    )
     assert hint and "2:40pm" in hint
 
 
@@ -23,4 +25,7 @@ def test_ignores_ordinary_errors():
 
 
 def test_first_matching_text_wins():
-    assert session_limit_hint(None, "", "quota exceeded, reset after midnight") == "midnight"
+    assert (
+        session_limit_hint(None, "", "quota exceeded, reset after midnight")
+        == "midnight"
+    )

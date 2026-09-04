@@ -3,10 +3,10 @@ import json
 import pytest
 
 pytest.importorskip("fastapi")
-from fastapi.testclient import TestClient  # noqa: E402
+from conftest import init_repo
+from fastapi.testclient import TestClient
 
-from conftest import init_repo  # noqa: E402
-from orchestrator import extensions  # noqa: E402
+from orchestrator import extensions
 
 
 @pytest.fixture
@@ -43,17 +43,23 @@ def test_login_resolves_cli_and_reports_missing_one_as_json(monkeypatch):
     shims that need a shell); a CLI that is not installed comes back as a
     JSON 502, not a 500 HTML page."""
     import orchestrator.dashboard.app as appmod
-    import orchestrator.workers.base as base
+    from orchestrator.workers import base
     from orchestrator.workers.base import WorkerError
 
     calls = []
-    monkeypatch.setattr(appmod.subprocess, "Popen", lambda *a, **k: calls.append((a, k)))
-    monkeypatch.setattr(base, "resolve_executable", lambda name: (f"/opt/{name}", False))
+    monkeypatch.setattr(
+        appmod.subprocess, "Popen", lambda *a, **k: calls.append((a, k))
+    )
+    monkeypatch.setattr(
+        base, "resolve_executable", lambda name: (f"/opt/{name}", False)
+    )
     c = TestClient(appmod.create_app())
     assert c.post("/api/login/codex").status_code == 200
     assert calls and calls[0][0][0] == ["/opt/codex", "login"]
 
-    monkeypatch.setattr(base, "resolve_executable", lambda name: (_ for _ in ()).throw(WorkerError("x")))
+    monkeypatch.setattr(
+        base, "resolve_executable", lambda name: (_ for _ in ()).throw(WorkerError("x"))
+    )
     r = c.post("/api/login/opencode")
     assert r.status_code == 502
     assert "opencode" in r.json()["detail"]

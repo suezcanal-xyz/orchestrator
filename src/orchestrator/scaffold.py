@@ -22,7 +22,9 @@ class ScaffoldResult:
 
 
 def _agents_template() -> str:
-    return (resources.files("orchestrator.templates") / "AGENTS.md").read_text(encoding="utf-8")
+    return (resources.files("orchestrator.templates") / "AGENTS.md").read_text(
+        encoding="utf-8"
+    )
 
 
 def scaffold_repo(repo: Path, project: str | None = None) -> ScaffoldResult:

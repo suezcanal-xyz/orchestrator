@@ -65,7 +65,7 @@ class Task:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "Task":
+    def from_dict(cls, data: dict) -> Task:
         return cls(
             id=data["id"],
             title=data["title"],
@@ -179,16 +179,20 @@ class TaskGraph:
                         out.append(shortest)
         return out
 
-    def likely_overlaps(self, tasks: "list[Task] | None" = None) -> list[tuple[str, str, str]]:
+    def likely_overlaps(
+        self, tasks: list[Task] | None = None
+    ) -> list[tuple[str, str, str]]:
         """Pairs of tasks (from `tasks`, default all READY) whose files_hint
         overlap -- (id_a, id_b, shared_path). The scheduler serialises
         these into different batches; this list is what a run should warn
         the human about, because the two branches still have to be
         integrated against the same file."""
-        pool = sorted(tasks if tasks is not None else self.ready_tasks(), key=lambda t: t.id)
+        pool = sorted(
+            tasks if tasks is not None else self.ready_tasks(), key=lambda t: t.id
+        )
         out: list[tuple[str, str, str]] = []
         for i, a in enumerate(pool):
-            for b in pool[i + 1:]:
+            for b in pool[i + 1 :]:
                 for path in self.shared_files(a, b):
                     out.append((a.id, b.id, path))
         return out
@@ -229,7 +233,7 @@ class TaskGraph:
         )
 
     @classmethod
-    def load(cls, path: Path) -> "TaskGraph":
+    def load(cls, path: Path) -> TaskGraph:
         if not path.exists():
             return cls()
         data = json.loads(path.read_text(encoding="utf-8"))

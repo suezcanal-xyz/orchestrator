@@ -29,6 +29,7 @@ def _run(args: list[str], cwd: Path, check: bool = True) -> subprocess.Completed
         cwd=str(cwd),
         capture_output=True,
         text=True,
+        check=False,
         encoding="utf-8",
         errors="replace",
     )
@@ -60,12 +61,16 @@ def default_branch(path: Path) -> str:
     Tries origin/HEAD first, then falls back to whichever of main/master
     exists locally, then to the current branch as a last resort.
     """
-    proc = _run(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], cwd=path, check=False)
+    proc = _run(
+        ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], cwd=path, check=False
+    )
     if proc.returncode == 0 and proc.stdout.strip():
         return proc.stdout.strip().split("/", 1)[-1]
     branches = _run(["branch", "--list"], cwd=path, check=False).stdout
     for name in PROTECTED_BRANCH_NAMES:
-        if any(line.strip().lstrip("* ").strip() == name for line in branches.splitlines()):
+        if any(
+            line.strip().lstrip("* ").strip() == name for line in branches.splitlines()
+        ):
             return name
     return current_branch(path)
 
@@ -89,7 +94,9 @@ class Worktree:
     repo_root: Path
 
 
-def create_worktree(repo: Path, run_id: str, task_id: str, base_ref: str | None = None) -> Worktree:
+def create_worktree(
+    repo: Path, run_id: str, task_id: str, base_ref: str | None = None
+) -> Worktree:
     """Create an isolated worktree on a new orchestrator/<run>/<task> branch.
 
     Worktrees are created as sibling directories of the repo, under
@@ -99,14 +106,18 @@ def create_worktree(repo: Path, run_id: str, task_id: str, base_ref: str | None 
     root = repo_root(repo)
     base = base_ref or default_branch(root)
     branch = branch_name(run_id, task_id)
-    assert_not_protected(root, branch)  # defensive; branch is always namespaced, never protected
+    assert_not_protected(
+        root, branch
+    )  # defensive; branch is always namespaced, never protected
 
     wt_dir = root / ".orchestrator" / "worktrees" / run_id / task_id
     wt_dir.parent.mkdir(parents=True, exist_ok=True)
     if wt_dir.exists():
         raise GitError(f"worktree path already exists: {wt_dir}")
 
-    existing_branch = _run(["branch", "--list", branch], cwd=root, check=False).stdout.strip()
+    existing_branch = _run(
+        ["branch", "--list", branch], cwd=root, check=False
+    ).stdout.strip()
     if existing_branch:
         _run(["worktree", "add", str(wt_dir), branch], cwd=root)
     else:
@@ -118,7 +129,7 @@ def create_worktree(repo: Path, run_id: str, task_id: str, base_ref: str | None 
 @dataclass
 class IntegrationResult:
     worktree: Worktree
-    merged: list[str]      # task branches that merged cleanly
+    merged: list[str]  # task branches that merged cleanly
     conflicted: list[str]  # task branches that did not (recorded, then skipped)
 
 
@@ -151,7 +162,9 @@ def create_integration_worktree(
     merged: list[str] = []
     conflicted: list[str] = []
     for tb in task_branches:
-        p = _run(["merge", "--no-ff", "-m", f"integrate {tb}", tb], cwd=wt_dir, check=False)
+        p = _run(
+            ["merge", "--no-ff", "-m", f"integrate {tb}", tb], cwd=wt_dir, check=False
+        )
         if p.returncode == 0:
             merged.append(tb)
         else:

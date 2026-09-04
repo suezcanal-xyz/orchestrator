@@ -80,6 +80,7 @@ quotes, so only short fixed flags go through argv. `codex.py` and
 
 ```python
 from orchestrator import extensions
+
 extensions.register_worker("my-model", MyWorker)
 ```
 
@@ -88,15 +89,14 @@ then pass `--worker my-model` on the CLI. No other file needs to change --
 `Worker` interface. `orchestrator doctor` reports any agent CLI it finds
 on PATH with no registered Worker, so you know what's worth adding.
 
-**opencode** (detected by `orchestrator doctor`, not yet implemented):
+**opencode** (built-in worker, detected by `orchestrator doctor`):
 `opencode run [message] --dir <path> --format json --auto` is the
 non-interactive contract (verified via `opencode run --help`; `--auto`
 auto-approves permissions, the same class of flag as Codex's
 `danger-full-access` or Claude's `bypassPermissions` -- same caveats
 apply, see `docs/SECURITY.md`). This has **not** been live-verified end
-to end in this repo (no authenticated provider was available while
-building it) -- confirm the JSON output shape (`--format json`) actually
-matches what `WorkerResponse` expects before trusting it in production.
+to end against every provider -- confirm the configured provider's JSON
+output shape (`--format json`) in a bounded local run before relying on it
 
 ## Adding a verifier, context provider, policy, or hook
 

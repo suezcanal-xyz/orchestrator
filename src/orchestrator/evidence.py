@@ -21,20 +21,22 @@ if TYPE_CHECKING:
 MAX_RAW_OUTPUT_CHARS = 20_000
 
 
-def save_diff(run_paths: "RunPaths", task_id: str, diff_text: str) -> Path:
+def save_diff(run_paths: RunPaths, task_id: str, diff_text: str) -> Path:
     path = run_paths.diffs_dir / f"{task_id}.diff"
     path.write_text(diff_text, encoding="utf-8")
     return path
 
 
-def save_log(run_paths: "RunPaths", task_id: str, stage: str, text: str) -> Path:
+def save_log(run_paths: RunPaths, task_id: str, stage: str, text: str) -> Path:
     path = run_paths.logs_dir / f"{task_id}.{stage}.log"
     existing = path.read_text(encoding="utf-8") if path.exists() else ""
     path.write_text(existing + text.rstrip() + "\n", encoding="utf-8")
     return path
 
 
-def save_worker_response(run_paths: "RunPaths", task_id: str, stage: str, response: "WorkerResponse") -> Path:
+def save_worker_response(
+    run_paths: RunPaths, task_id: str, stage: str, response: WorkerResponse
+) -> Path:
     path = run_paths.evidence_dir / f"{task_id}.{stage}.json"
     data = {
         "task_id": task_id,
@@ -49,21 +51,27 @@ def save_worker_response(run_paths: "RunPaths", task_id: str, stage: str, respon
         "extra": response.extra,
         "raw_output_truncated": response.raw_output[-MAX_RAW_OUTPUT_CHARS:],
     }
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
     return path
 
 
-def save_verification(run_paths: "RunPaths", task_id: str, results: list["VerificationResult"]) -> Path:
+def save_verification(
+    run_paths: RunPaths, task_id: str, results: list[VerificationResult]
+) -> Path:
     path = run_paths.tests_dir / f"{task_id}.json"
     existing: list[dict] = []
     if path.exists():
         existing = json.loads(path.read_text(encoding="utf-8"))
     existing.extend(r.to_dict() for r in results)
-    path.write_text(json.dumps(existing, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(existing, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
     return path
 
 
-def write_verdict(run_paths: "RunPaths", verdict_text: str) -> Path:
+def write_verdict(run_paths: RunPaths, verdict_text: str) -> Path:
     run_paths.verdict.write_text(verdict_text, encoding="utf-8")
     return run_paths.verdict
 
@@ -71,13 +79,14 @@ def write_verdict(run_paths: "RunPaths", verdict_text: str) -> Path:
 _USAGE_KEYS = ("input_tokens", "output_tokens", "cache_read_tokens")
 
 
-def run_usage_summary(run_paths: "RunPaths") -> dict:
+def run_usage_summary(run_paths: RunPaths) -> dict:
     """Aggregate every `<task>.<stage>.json` worker-response file in this run
     into cost + token totals, broken down by worker and by stage.
 
     `stage` is the part after the last dot before `.json` with any trailing
     `-<n>` (debug-1, debug-2) folded into `debug`.
     """
+
     def _new_slot() -> dict:
         return {"cost_usd": 0.0, "duration_seconds": 0.0, **{k: 0 for k in _USAGE_KEYS}}
 
@@ -138,7 +147,11 @@ def _slot_line(name: str, slot: dict) -> str:
 def format_cost_section(summary: dict) -> str:
     t = summary["totals"]
     tok = t["input_tokens"] + t["output_tokens"]
-    if t["cost_usd"] == 0.0 and tok == 0 and t.get("duration_seconds", 0) >= _UNREPORTED_MIN_SECONDS:
+    if (
+        t["cost_usd"] == 0.0
+        and tok == 0
+        and t.get("duration_seconds", 0) >= _UNREPORTED_MIN_SECONDS
+    ):
         total_line = "Total: usage not reported by one or more agent CLIs (see below)"
     else:
         total_line = f"Total: ${t['cost_usd']:.4f}"
@@ -146,7 +159,11 @@ def format_cost_section(summary: dict) -> str:
     if tok:
         lines.append(
             f"Tokens: {tok:,} ({t['input_tokens']:,} in / {t['output_tokens']:,} out"
-            + (f" / {t['cache_read_tokens']:,} cache-read" if t["cache_read_tokens"] else "")
+            + (
+                f" / {t['cache_read_tokens']:,} cache-read"
+                if t["cache_read_tokens"]
+                else ""
+            )
             + ")"
         )
     if summary["by_worker"]:

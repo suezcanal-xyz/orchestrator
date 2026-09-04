@@ -5,7 +5,9 @@ from pathlib import Path
 def init_repo(path: Path, files: dict[str, str] | None = None) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=path, check=True)
-    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=path, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "t@example.com"], cwd=path, check=True
+    )
     subprocess.run(["git", "config", "user.name", "T"], cwd=path, check=True)
     (path / "README.md").write_text("# demo\n", encoding="utf-8")
     for rel, content in (files or {}).items():

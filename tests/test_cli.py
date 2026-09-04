@@ -1,8 +1,8 @@
 import json
 
 from click.testing import CliRunner
-
 from conftest import init_repo
+
 from orchestrator import extensions
 from orchestrator.cli import main
 from orchestrator.workers.base import Worker, WorkerResponse
@@ -20,14 +20,20 @@ class FakeReconcileWorker(Worker):
                     {
                         "title": "Do the thing",
                         "acceptance": ["it works"],
-                        "verification": ["python -c \"1\""],
+                        "verification": ['python -c "1"'],
                         "priority": "P2",
                         "files_hint": [],
                     }
                 ],
             }
         )
-        return WorkerResponse(ok=True, summary=payload, raw_output=payload, duration_seconds=0.01, worker=self.name)
+        return WorkerResponse(
+            ok=True,
+            summary=payload,
+            raw_output=payload,
+            duration_seconds=0.01,
+            worker=self.name,
+        )
 
 
 def setup_module(module):
@@ -50,7 +56,9 @@ def test_ingest_then_plan_then_status(tmp_path):
     repo = init_repo(tmp_path / "demo")
     runner = CliRunner()
 
-    r1 = runner.invoke(main, ["ingest", str(repo), "please add the thing", "--worker", "fakecli"])
+    r1 = runner.invoke(
+        main, ["ingest", str(repo), "please add the thing", "--worker", "fakecli"]
+    )
     assert r1.exit_code == 0, r1.output
     assert "classification: NEW_REQUIREMENT" in r1.output
     assert "added tasks:" in r1.output
@@ -108,12 +116,15 @@ def test_run_hints_when_on_a_non_default_branch_without_base(tmp_path, monkeypat
 
     from orchestrator import engine
 
-    repo = init_repo(tmp_path / "demo", files={
-        "docs/PLAN.md": (
-            "---\nproject: demo\ncurrent_version: 0.0.0\ntarget_version: 0.1.0\n"
-            "active_milestone: m\nstatus: IN_PROGRESS\n---\n# PROJECT PLAN\n\n## Tasks\n\n_No tasks yet._\n"
-        ),
-    })
+    repo = init_repo(
+        tmp_path / "demo",
+        files={
+            "docs/PLAN.md": (
+                "---\nproject: demo\ncurrent_version: 0.0.0\ntarget_version: 0.1.0\n"
+                "active_milestone: m\nstatus: IN_PROGRESS\n---\n# PROJECT PLAN\n\n## Tasks\n\n_No tasks yet._\n"
+            ),
+        },
+    )
     subprocess.run(["git", "checkout", "-q", "-b", "feat/wip"], cwd=repo, check=True)
 
     seen = {}
@@ -127,4 +138,6 @@ def test_run_hints_when_on_a_non_default_branch_without_base(tmp_path, monkeypat
     result = CliRunner().invoke(main, ["run", str(repo)])
     assert "on branch 'feat/wip'" in result.output
     assert "--base feat/wip" in result.output
-    assert seen["base_ref"] is None  # hint only; still bases on default unless --base given
+    assert (
+        seen["base_ref"] is None
+    )  # hint only; still bases on default unless --base given

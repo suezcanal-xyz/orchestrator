@@ -49,7 +49,9 @@ def _resolve_workers(names: tuple[str, ...]) -> list[Worker]:
             out.append(builtin[name]())
         else:
             available = sorted(set(builtin) | set(registered))
-            raise click.ClickException(f"unknown worker {name!r}; available: {available}")
+            raise click.ClickException(
+                f"unknown worker {name!r}; available: {available}"
+            )
     return out
 
 
@@ -86,7 +88,11 @@ def ingest(repo: Path, prompt: str, worker: str) -> None:
 
 @main.command()
 @click.argument("repo", type=click.Path(exists=True, file_okay=False, path_type=Path))
-@click.option("--project", default=None, help="Project name for the new PLAN.md (default: repo directory name).")
+@click.option(
+    "--project",
+    default=None,
+    help="Project name for the new PLAN.md (default: repo directory name).",
+)
 def init(repo: Path, project: str | None) -> None:
     """Scaffold docs/PLAN.md + AGENTS.md in REPO (never overwrites)."""
     from orchestrator.scaffold import scaffold_repo
@@ -97,7 +103,9 @@ def init(repo: Path, project: str | None) -> None:
     for f in result.skipped:
         click.echo(f"skipped  {f} (already exists)")
     if result.created:
-        click.echo("\nEdit docs/PLAN.md (## Requirements, ## Acceptance Criteria, ## Verification Commands), then `orchestrator run`.")
+        click.echo(
+            "\nEdit docs/PLAN.md (## Requirements, ## Acceptance Criteria, ## Verification Commands), then `orchestrator run`."
+        )
 
 
 @main.command(name="plan")
@@ -106,28 +114,90 @@ def plan_cmd(repo: Path) -> None:
     """Print the current docs/PLAN.md (read-only)."""
     p = engine.plan_path(repo)
     if not p.exists():
-        raise click.ClickException(f"{p} does not exist yet -- run `orchestrator ingest` first")
+        raise click.ClickException(
+            f"{p} does not exist yet -- run `orchestrator ingest` first"
+        )
     click.echo(p.read_text(encoding="utf-8"))
 
 
 @main.command()
 @click.argument("repo", type=click.Path(exists=True, file_okay=False, path_type=Path))
-@click.option("--prompt", default=None, help="Current request; omit to just execute existing READY tasks.")
-@click.option("--worker", "workers", multiple=True, help="Implement workers, in assignment order. Overrides any private `workers` policy.")
-@click.option("--max-debug-attempts", type=int, default=None, help=f"Default {DEFAULT_MAX_DEBUG_ATTEMPTS} (or the private `max_debug_attempts` policy).")
-@click.option("--verification-timeout", type=int, default=None, help=f"Seconds per verification command. Default {DEFAULT_VERIFICATION_TIMEOUT}.")
-@click.option("--base", "base_ref", default=None, help="Branch/ref to base task worktrees on. Default: the repo's detected default branch. Use a WIP feature branch to work tasks whose context only exists there.")
-@click.option("--task", "task_ids", multiple=True, help="Run only these task id(s), skipping the rest of READY. Repeatable.")
-@click.option("--resume", "resume_from", default=None, help="Continue a prior run id (under .orchestrator/runs/): skip reconcile, keep DONE tasks, carry the prior plan forward. Use after a paused (session-limit) run.")
-@click.option("--quiet", is_flag=True, help="Suppress live per-task progress; print only the final summary.")
-def run(repo: Path, prompt: str | None, workers: tuple[str, ...], max_debug_attempts: int | None, verification_timeout: int | None, base_ref: str | None, task_ids: tuple[str, ...], resume_from: str | None, quiet: bool) -> None:
+@click.option(
+    "--prompt",
+    default=None,
+    help="Current request; omit to just execute existing READY tasks.",
+)
+@click.option(
+    "--worker",
+    "workers",
+    multiple=True,
+    help="Implement workers, in assignment order. Overrides any private `workers` policy.",
+)
+@click.option(
+    "--max-debug-attempts",
+    type=int,
+    default=None,
+    help=f"Default {DEFAULT_MAX_DEBUG_ATTEMPTS} (or the private `max_debug_attempts` policy).",
+)
+@click.option(
+    "--verification-timeout",
+    type=int,
+    default=None,
+    help=f"Seconds per verification command. Default {DEFAULT_VERIFICATION_TIMEOUT}.",
+)
+@click.option(
+    "--base",
+    "base_ref",
+    default=None,
+    help="Branch/ref to base task worktrees on. Default: the repo's detected default branch. Use a WIP feature branch to work tasks whose context only exists there.",
+)
+@click.option(
+    "--task",
+    "task_ids",
+    multiple=True,
+    help="Run only these task id(s), skipping the rest of READY. Repeatable.",
+)
+@click.option(
+    "--resume",
+    "resume_from",
+    default=None,
+    help="Continue a prior run id (under .orchestrator/runs/): skip reconcile, keep DONE tasks, carry the prior plan forward. Use after a paused (session-limit) run.",
+)
+@click.option(
+    "--quiet",
+    is_flag=True,
+    help="Suppress live per-task progress; print only the final summary.",
+)
+def run(
+    repo: Path,
+    prompt: str | None,
+    workers: tuple[str, ...],
+    max_debug_attempts: int | None,
+    verification_timeout: int | None,
+    base_ref: str | None,
+    task_ids: tuple[str, ...],
+    resume_from: str | None,
+    quiet: bool,
+) -> None:
     """ingest + plan + execution + verification in one pass (the daily entry point)."""
     if resume_from and prompt:
-        click.echo("note: --resume ignores --prompt (resuming does not reconcile a new request).", err=True)
+        click.echo(
+            "note: --resume ignores --prompt (resuming does not reconcile a new request).",
+            err=True,
+        )
     project = engine.load_or_create_plan(repo).meta.project
-    resolved = _resolve_workers(tuple(policy.effective_workers(project, tuple(workers))))
-    mda = policy.effective_int("max_debug_attempts", project, DEFAULT_MAX_DEBUG_ATTEMPTS, max_debug_attempts)
-    vt = policy.effective_int("verification_timeout_seconds", project, DEFAULT_VERIFICATION_TIMEOUT, verification_timeout)
+    resolved = _resolve_workers(
+        tuple(policy.effective_workers(project, tuple(workers)))
+    )
+    mda = policy.effective_int(
+        "max_debug_attempts", project, DEFAULT_MAX_DEBUG_ATTEMPTS, max_debug_attempts
+    )
+    vt = policy.effective_int(
+        "verification_timeout_seconds",
+        project,
+        DEFAULT_VERIFICATION_TIMEOUT,
+        verification_timeout,
+    )
 
     if base_ref is None:
         cur = git.current_branch(repo)
@@ -143,21 +213,30 @@ def run(repo: Path, prompt: str | None, workers: tuple[str, ...], max_debug_atte
 
         register_console_progress()
     result = engine.run(
-        repo=repo, prompt_text=prompt, implement_workers=resolved,
-        max_debug_attempts=mda, verification_timeout=vt,
-        base_ref=base_ref, only_task_ids=set(task_ids) or None, resume_from=resume_from,
+        repo=repo,
+        prompt_text=prompt,
+        implement_workers=resolved,
+        max_debug_attempts=mda,
+        verification_timeout=vt,
+        base_ref=base_ref,
+        only_task_ids=set(task_ids) or None,
+        resume_from=resume_from,
     )
     for o in result.task_outcomes:
         click.echo(f"{o.task_id}: {o.status}  (debug attempts: {o.debug_attempts})")
     click.echo("")
     if result.nothing_to_do:
-        click.echo("NO WORK -- reconcile found the request already satisfied and no pending tasks.")
+        click.echo(
+            "NO WORK -- reconcile found the request already satisfied and no pending tasks."
+        )
         click.echo(f"run: {result.run_paths.root}")
         return
     click.echo(result.verdict.render())
     if result.scoped:
-        click.echo(f"scoped run status: {result.run_status}  "
-                   f"(milestone verdict above is for the whole milestone, not this run)")
+        click.echo(
+            f"scoped run status: {result.run_status}  "
+            f"(milestone verdict above is for the whole milestone, not this run)"
+        )
     click.echo(f"run: {result.run_paths.root}  status: {result.run_status}")
     if result.run_status == "BLOCKED_SESSION_LIMIT":
         reset = result.session_limit_hint or "an unknown time"
@@ -180,7 +259,9 @@ def verify(repo: Path, verification_timeout: int) -> None:
     from orchestrator import state as state_mod
 
     graph = state_mod.load_task_store(repo)
-    verdict = engine.build_verdict(repo, doc, graph, timeout_per_command=verification_timeout)
+    verdict = engine.build_verdict(
+        repo, doc, graph, timeout_per_command=verification_timeout
+    )
     click.echo(verdict.render())
     if not verdict.ready:
         sys.exit(1)
@@ -188,7 +269,12 @@ def verify(repo: Path, verification_timeout: int) -> None:
 
 @main.command()
 @click.argument("repo", type=click.Path(exists=True, file_okay=False, path_type=Path))
-@click.option("--json", "as_json", is_flag=True, help="Print machine-readable JSON instead of text.")
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Print machine-readable JSON instead of text.",
+)
 def status(repo: Path, as_json: bool) -> None:
     """Summarize project/version/milestone/task counts. No execution."""
     s = engine.status(repo)
@@ -207,7 +293,9 @@ def status(repo: Path, as_json: bool) -> None:
 
 @main.command()
 @click.option("--port", default=8765, show_default=True)
-@click.option("--host", default="127.0.0.1", show_default=True, help="Keep this localhost-only.")
+@click.option(
+    "--host", default="127.0.0.1", show_default=True, help="Keep this localhost-only."
+)
 @click.option("--no-open", is_flag=True, help="Do not open a browser tab.")
 def onboarding(port: int, host: str, no_open: bool) -> None:
     """Open the local onboarding dashboard (needs the `dashboard` extra)."""
@@ -243,7 +331,7 @@ def doctor() -> None:
         click.echo("")
         click.echo(
             f"Detected but not usable as a worker yet: {', '.join(missing_worker)}. "
-            "See docs/DEVELOPMENT.md \"Adding a worker\" to register one via "
+            'See docs/DEVELOPMENT.md "Adding a worker" to register one via '
             "orchestrator.extensions.register_worker()."
         )
 

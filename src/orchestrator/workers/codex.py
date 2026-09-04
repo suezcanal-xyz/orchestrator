@@ -8,7 +8,12 @@ import tempfile
 import time
 from pathlib import Path
 
-from orchestrator.workers.base import Worker, WorkerResponse, _safe_subprocess_env, resolve_executable
+from orchestrator.workers.base import (
+    Worker,
+    WorkerResponse,
+    _safe_subprocess_env,
+    resolve_executable,
+)
 
 _TOKENS_RE = re.compile(r"tokens used[:\s]+([\d,]+)", re.IGNORECASE)
 
@@ -44,13 +49,18 @@ class CodexWorker(Worker):
         with tempfile.TemporaryDirectory() as td:
             last_msg_path = Path(td) / "last_message.txt"
             args = [
-                exe, "exec",
-                "-C", str(cwd),
-                "-s", sandbox_mode,
-                "--color", "never",
-                "-o", str(last_msg_path),
+                exe,
+                "exec",
+                "-C",
+                str(cwd),
+                "-s",
+                sandbox_mode,
+                "--color",
+                "never",
+                "-o",
+                str(last_msg_path),
                 "-",  # read the prompt from stdin: avoids Windows cmd.exe
-                      # command-line length/quoting limits on a multi-KB prompt
+                # command-line length/quoting limits on a multi-KB prompt
             ]
             start = time.monotonic()
             try:
@@ -59,6 +69,7 @@ class CodexWorker(Worker):
                     input=prompt,
                     capture_output=True,
                     text=True,
+                    check=False,
                     encoding="utf-8",
                     errors="replace",
                     env=_safe_subprocess_env(),
@@ -77,7 +88,9 @@ class CodexWorker(Worker):
             duration = time.monotonic() - start
             summary = ""
             if last_msg_path.exists():
-                summary = last_msg_path.read_text(encoding="utf-8", errors="replace").strip()
+                summary = last_msg_path.read_text(
+                    encoding="utf-8", errors="replace"
+                ).strip()
             raw = proc.stdout + (("\n" + proc.stderr) if proc.stderr else "")
             ok = proc.returncode == 0
             usage = _best_effort_usage(raw)

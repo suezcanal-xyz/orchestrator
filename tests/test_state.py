@@ -9,7 +9,9 @@ from orchestrator.workers.base import WorkerResponse
 def _init_repo(path):
     path.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=path, check=True)
-    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=path, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "t@example.com"], cwd=path, check=True
+    )
     subprocess.run(["git", "config", "user.name", "T"], cwd=path, check=True)
     (path / "README.md").write_text("hi\n", encoding="utf-8")
     subprocess.run(["git", "add", "-A"], cwd=path, check=True)
@@ -46,7 +48,9 @@ def test_init_run_creates_expected_tree(tmp_path):
 
 def test_task_store_roundtrip(tmp_path):
     repo = _init_repo(tmp_path / "demo")
-    graph = TaskGraph([Task(id="SC-001", title="x", acceptance=["a"], verification=["v"])])
+    graph = TaskGraph(
+        [Task(id="SC-001", title="x", acceptance=["a"], verification=["v"])]
+    )
     state.save_task_store(repo, graph)
     loaded = state.load_task_store(repo)
     assert loaded.get("SC-001").title == "x"
@@ -86,7 +90,13 @@ def test_evidence_writers(tmp_path):
     log_text = (rp.logs_dir / "SC-001.implement.log").read_text(encoding="utf-8")
     assert "hello log line" in log_text
 
-    resp = WorkerResponse(ok=True, summary="done", raw_output="x" * 30000, duration_seconds=1.2, worker="claude")
+    resp = WorkerResponse(
+        ok=True,
+        summary="done",
+        raw_output="x" * 30000,
+        duration_seconds=1.2,
+        worker="claude",
+    )
     path = evidence.save_worker_response(rp, "SC-001", "implement", resp)
     assert path.exists()
     import json

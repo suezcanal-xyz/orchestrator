@@ -129,7 +129,7 @@ No SaaS, no cloud account, no hosted database, no auth server, no
 Kubernetes, no Redis, no vector database, no autonomous deploy or merge, no
 generic chat interface. The onboarding dashboard is an optional, local,
 single-user page -- not a product surface. Session-limit-aware
-pause/resume is designed (`docs/SESSION-LIMITS.md`) but not built. See
+pause/resume is available for bounded local runs. See
 `docs/ARCHITECTURE.md` for the full list of what is kept out and why.
 
 ## Why

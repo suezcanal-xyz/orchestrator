@@ -18,7 +18,9 @@ class FakeReconcileWorker(Worker):
     def _invoke(self, cwd, prompt, *, timeout, allow_edit, structured=False):
         s = self._summaries[min(self._calls, len(self._summaries) - 1)]
         self._calls += 1
-        return WorkerResponse(ok=True, summary=s, raw_output=s, duration_seconds=0.01, worker=self.name)
+        return WorkerResponse(
+            ok=True, summary=s, raw_output=s, duration_seconds=0.01, worker=self.name
+        )
 
 
 VALID_PAYLOAD = json.dumps(
@@ -71,15 +73,17 @@ def test_reconcile_adds_task_and_change_history(tmp_path):
 
 def test_reconcile_skips_duplicate_active_task(tmp_path):
     doc = plan_mod.new_plan("SeaCommons")
-    graph = TaskGraph([
-        Task(
-            id="SC-001",
-            title="Fix NGO vessel panel dropping entries",
-            status="READY",
-            acceptance=["x"],
-            verification=["y"],
-        )
-    ])
+    graph = TaskGraph(
+        [
+            Task(
+                id="SC-001",
+                title="Fix NGO vessel panel dropping entries",
+                status="READY",
+                acceptance=["x"],
+                verification=["y"],
+            )
+        ]
+    )
     worker = FakeReconcileWorker([VALID_PAYLOAD])
 
     result = reconcile(

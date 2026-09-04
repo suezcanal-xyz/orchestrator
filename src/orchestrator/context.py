@@ -16,30 +16,85 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 IGNORE_DIRS = {
-    ".git", ".orchestrator", "node_modules", "__pycache__", ".venv", "venv",
-    "dist", "build", ".next", ".turbo", "target", ".pytest_cache", ".mypy_cache",
-    "vendor", ".idea", ".vscode", "coverage", ".ruff_cache",
+    ".git",
+    ".orchestrator",
+    "node_modules",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "dist",
+    "build",
+    ".next",
+    ".turbo",
+    "target",
+    ".pytest_cache",
+    ".mypy_cache",
+    "vendor",
+    ".idea",
+    ".vscode",
+    "coverage",
+    ".ruff_cache",
 }
 
 MANIFEST_NAMES = {
-    "package.json", "pyproject.toml", "setup.py", "requirements.txt",
-    "requirements-dev.txt", "Cargo.toml", "go.mod", "composer.json", "Gemfile",
+    "package.json",
+    "pyproject.toml",
+    "setup.py",
+    "requirements.txt",
+    "requirements-dev.txt",
+    "Cargo.toml",
+    "go.mod",
+    "composer.json",
+    "Gemfile",
 }
 LOCKFILE_NAMES = {
-    "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock",
-    "Pipfile.lock", "Cargo.lock", "composer.lock",
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "poetry.lock",
+    "Pipfile.lock",
+    "Cargo.lock",
+    "composer.lock",
 }
 ENV_EXAMPLE_PATTERNS = ("*.env.example", ".env.example", ".env.sample", "*.env.sample")
-CI_GLOBS = (".github/workflows/*.yml", ".github/workflows/*.yaml", ".gitlab-ci.yml", ".circleci/config.yml")
+CI_GLOBS = (
+    ".github/workflows/*.yml",
+    ".github/workflows/*.yaml",
+    ".gitlab-ci.yml",
+    ".circleci/config.yml",
+)
 DB_SCHEMA_HINTS = ("schema.sql", "schema.prisma")
-API_SCHEMA_HINTS = ("openapi.yaml", "openapi.yml", "openapi.json", "swagger.yaml", "swagger.json")
+API_SCHEMA_HINTS = (
+    "openapi.yaml",
+    "openapi.yml",
+    "openapi.json",
+    "swagger.yaml",
+    "swagger.json",
+)
 TEST_DIR_NAMES = {"test", "tests", "__tests__", "spec", "specs"}
 MIGRATION_DIR_NAMES = {"migrations", "alembic", "migrate"}
 
 MARKER_RE = re.compile(r"\b(TODO|FIXME|XXX|HACK|DEPRECATED|LEGACY)\b[:\s]?(.{0,120})")
 TEXT_EXTENSIONS = {
-    ".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".java", ".rb", ".php",
-    ".md", ".yml", ".yaml", ".toml", ".ini", ".cfg", ".sql", ".sh", ".ps1",
+    ".py",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".go",
+    ".rs",
+    ".java",
+    ".rb",
+    ".php",
+    ".md",
+    ".yml",
+    ".yaml",
+    ".toml",
+    ".ini",
+    ".cfg",
+    ".sql",
+    ".sh",
+    ".ps1",
 }
 MAX_MARKER_SCAN_FILES = 4000
 MAX_MARKER_HITS = 200
@@ -51,7 +106,10 @@ _CLASS_PATTERNS: list[tuple[re.Pattern, LegacyClass]] = [
     (re.compile(r"(^|/)(vendor|node_modules|third_party)(/|$)"), "VENDOR"),
     (re.compile(r"(^|/)(dist|build|out|generated|\.next)(/|$)"), "GENERATED"),
     (re.compile(r"\.min\.(js|css)$"), "GENERATED"),
-    (re.compile(r"(^|/)(legacy|_archive|deprecated|old)(/|$)", re.IGNORECASE), "LEGACY"),
+    (
+        re.compile(r"(^|/)(legacy|_archive|deprecated|old)(/|$)", re.IGNORECASE),
+        "LEGACY",
+    ),
     (re.compile(r"(^|/)(migrations|alembic)(/|$)"), "CURRENT"),
 ]
 
@@ -146,7 +204,11 @@ def _git_files(root: Path) -> set[str] | None:
         proc = subprocess.run(
             ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
             cwd=str(root),
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
         )
         if proc.returncode != 0:
             return None
@@ -165,8 +227,7 @@ def _walk(root: Path, files: set[str] | None = None):
     if files is not None:
         yield from _files_walk(root, files)
         return
-    for dirpath, dirnames, filenames in _os_walk_pruned(root):
-        yield dirpath, dirnames, filenames
+    yield from _os_walk_pruned(root)
 
 
 def _files_walk(root: Path, files: set[str]):
@@ -190,7 +251,9 @@ def _os_walk_pruned(root: Path):
     import os
 
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in IGNORE_DIRS and not d.startswith(".")]
+        dirnames[:] = [
+            d for d in dirnames if d not in IGNORE_DIRS and not d.startswith(".")
+        ]
         yield Path(dirpath), dirnames, filenames
 
 
@@ -205,7 +268,9 @@ def build_context(root: Path) -> RepoContext:
     root = root.resolve()
     ctx = RepoContext(root=root)
 
-    ctx.readme_excerpt = _read_first(root, ["README.md", "readme.md", "README.rst", "README"])
+    ctx.readme_excerpt = _read_first(
+        root, ["README.md", "readme.md", "README.rst", "README"]
+    )
     ctx.agents_md = _read_first(root, ["AGENTS.md"])
     ctx.claude_md = _read_first(root, ["CLAUDE.md"])
 
@@ -218,15 +283,22 @@ def build_context(root: Path) -> RepoContext:
                 ctx.manifests.append(_rel(root, dirpath / name))
             if name in LOCKFILE_NAMES:
                 ctx.lockfiles.append(_rel(root, dirpath / name))
-            if name in {"openapi.yaml", "openapi.yml", "openapi.json", "swagger.yaml", "swagger.json"}:
+            if name in {
+                "openapi.yaml",
+                "openapi.yml",
+                "openapi.json",
+                "swagger.yaml",
+                "swagger.json",
+            }:
                 ctx.api_schema_paths.append(_rel(root, dirpath / name))
             if name in DB_SCHEMA_HINTS:
                 ctx.db_schema_paths.append(_rel(root, dirpath / name))
             if ".env.example" in name or ".env.sample" in name:
                 ctx.env_examples.append(_rel(root, dirpath / name))
-            if rel_dir == ".github/workflows" or dirpath.name == "workflows":
-                if name.endswith((".yml", ".yaml")):
-                    ctx.ci_configs.append(_rel(root, dirpath / name))
+            if (
+                rel_dir == ".github/workflows" or dirpath.name == "workflows"
+            ) and name.endswith((".yml", ".yaml")):
+                ctx.ci_configs.append(_rel(root, dirpath / name))
             if name in {".gitlab-ci.yml"}:
                 ctx.ci_configs.append(_rel(root, dirpath / name))
         base = dirpath.name.lower()
@@ -248,7 +320,12 @@ def _recent_git_log(root: Path, n: int = 20) -> list[str]:
     try:
         proc = subprocess.run(
             ["git", "log", f"-n{n}", "--pretty=%h %ad %s", "--date=short"],
-            cwd=str(root), capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
         )
         if proc.returncode == 0:
             return [line for line in proc.stdout.splitlines() if line.strip()]
@@ -258,7 +335,10 @@ def _recent_git_log(root: Path, n: int = 20) -> list[str]:
 
 
 def _directory_tree(
-    root: Path, max_depth: int = 2, max_entries: int = 150, files: set[str] | None = None
+    root: Path,
+    max_depth: int = 2,
+    max_entries: int = 150,
+    files: set[str] | None = None,
 ) -> list[str]:
     out: list[str] = []
     root_depth = len(root.parts)
@@ -299,8 +379,7 @@ def _scan_markers(
                     hints[child_rel] = child_cls
         if files is None:
             dirnames[:] = [
-                d for d in dirnames
-                if d not in IGNORE_DIRS and not d.startswith(".")
+                d for d in dirnames if d not in IGNORE_DIRS and not d.startswith(".")
             ]
         for name in filenames:
             if scanned >= MAX_MARKER_SCAN_FILES or len(markers) >= MAX_MARKER_HITS:
@@ -319,7 +398,14 @@ def _scan_markers(
             for i, line in enumerate(text.splitlines(), start=1):
                 m = MARKER_RE.search(line)
                 if m:
-                    markers.append(Marker(path=rel_path, line=i, kind=m.group(1), text=m.group(2).strip()))
+                    markers.append(
+                        Marker(
+                            path=rel_path,
+                            line=i,
+                            kind=m.group(1),
+                            text=m.group(2).strip(),
+                        )
+                    )
                     if len(markers) >= MAX_MARKER_HITS:
                         break
     return markers, hints
@@ -329,7 +415,13 @@ def _humanize_key(key: str) -> str:
     return key.replace("_", " ").replace("-", " ").strip().title()
 
 
-def with_providers(ctx: RepoContext, repo_path: Path, *, max_chars: int = 4000, per_section_chars: int = 1500) -> str:
+def with_providers(
+    ctx: RepoContext,
+    repo_path: Path,
+    *,
+    max_chars: int = 4000,
+    per_section_chars: int = 1500,
+) -> str:
     """The base context block plus any private context-provider output.
 
     `orchestrator-private` registers functions via
@@ -346,7 +438,7 @@ def with_providers(ctx: RepoContext, repo_path: Path, *, max_chars: int = 4000, 
     for provider in extensions.context_providers():
         try:
             data = provider(repo_path)
-        except Exception:  # noqa: BLE001 -- a broken provider must not break a run
+        except Exception:  # noqa: BLE001, S112 -- a broken provider must not break a run
             continue
         if not isinstance(data, dict):
             continue
@@ -354,7 +446,9 @@ def with_providers(ctx: RepoContext, repo_path: Path, *, max_chars: int = 4000, 
             text = str(value).strip()
             if not text:
                 continue
-            extra_sections.append(f"## {_humanize_key(key)}\n{text[:per_section_chars]}")
+            extra_sections.append(
+                f"## {_humanize_key(key)}\n{text[:per_section_chars]}"
+            )
     if not extra_sections:
         return base
     return base + "\n\n" + "\n\n".join(extra_sections) + "\n"
@@ -389,7 +483,9 @@ def focused_context(
             lines.append(f"### {hint}\n```\n{text[:max_chars_per_file]}\n```\n")
         elif p.is_dir():
             entries = sorted(x.name for x in p.iterdir())[:50]
-            lines.append(f"### {hint}/ (listing)\n" + "\n".join(f"- {e}" for e in entries) + "\n")
+            lines.append(
+                f"### {hint}/ (listing)\n" + "\n".join(f"- {e}" for e in entries) + "\n"
+            )
         else:
             lines.append(f"### {hint} (does not exist yet)\n")
     return "\n".join(lines)

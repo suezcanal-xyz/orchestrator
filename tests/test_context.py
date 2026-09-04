@@ -6,17 +6,25 @@ from orchestrator import context, extensions
 def _init_repo(path):
     path.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=path, check=True)
-    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=path, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "t@example.com"], cwd=path, check=True
+    )
     subprocess.run(["git", "config", "user.name", "T"], cwd=path, check=True)
     (path / "README.md").write_text("# Demo\n\nA demo project.\n", encoding="utf-8")
     (path / "AGENTS.md").write_text("Do not touch src/legacy/.\n", encoding="utf-8")
     (path / "pyproject.toml").write_text("[project]\nname='demo'\n", encoding="utf-8")
     (path / "src").mkdir()
-    (path / "src" / "app.py").write_text("# TODO: fix this properly\nx = 1\n", encoding="utf-8")
+    (path / "src" / "app.py").write_text(
+        "# TODO: fix this properly\nx = 1\n", encoding="utf-8"
+    )
     (path / "src" / "legacy").mkdir()
-    (path / "src" / "legacy" / "old.py").write_text("# DEPRECATED module\n", encoding="utf-8")
+    (path / "src" / "legacy" / "old.py").write_text(
+        "# DEPRECATED module\n", encoding="utf-8"
+    )
     (path / "tests").mkdir()
-    (path / "tests" / "test_app.py").write_text("def test_x():\n    assert True\n", encoding="utf-8")
+    (path / "tests" / "test_app.py").write_text(
+        "def test_x():\n    assert True\n", encoding="utf-8"
+    )
     (path / "vendor").mkdir()
     (path / "vendor" / "lib.js").write_text("// vendored\n", encoding="utf-8")
     subprocess.run(["git", "add", "-A"], cwd=path, check=True)
@@ -30,7 +38,9 @@ def test_context_ignores_gitignored_directories(tmp_path):
     (repo / ".gitignore").write_text("env-junk/\n", encoding="utf-8")
     junk = repo / "env-junk" / "site-packages"
     junk.mkdir(parents=True)
-    (junk / "setup.py").write_text("# TODO junk marker that must not surface\n", encoding="utf-8")
+    (junk / "setup.py").write_text(
+        "# TODO junk marker that must not surface\n", encoding="utf-8"
+    )
     (junk / "tests").mkdir()
     subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
     subprocess.run(["git", "commit", "-q", "-m", "gitignore"], cwd=repo, check=True)
@@ -96,7 +106,9 @@ def test_with_providers_appends_registered_section(tmp_path):
     extensions.reset_extensions()
     repo = _init_repo(tmp_path / "demo")
     ctx = context.build_context(repo)
-    extensions.register_context_provider(lambda p: {"private_notes": "SAR invariants apply here"})
+    extensions.register_context_provider(
+        lambda p: {"private_notes": "SAR invariants apply here"}
+    )
     block = context.with_providers(ctx, repo)
     assert "## Private Notes" in block
     assert "SAR invariants apply here" in block

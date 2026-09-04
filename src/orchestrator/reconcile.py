@@ -55,7 +55,7 @@ class ReconcileResult:
     change_history_entry: str
     added_task_ids: list[str] = field(default_factory=list)
     skipped_duplicates: list[str] = field(default_factory=list)
-    worker_response: "WorkerResponse | None" = None
+    worker_response: WorkerResponse | None = None
 
 
 def derive_prefix(project_name: str) -> str:
@@ -97,7 +97,7 @@ def _parse_proposal(data: dict) -> tuple[str, str, list[ProposedTask]]:
         raise ValueError("missing change_history_entry")
     raw_tasks = data.get("tasks", [])
     if not isinstance(raw_tasks, list):
-        raise ValueError("'tasks' must be a list")
+        raise TypeError("'tasks' must be a list")
     tasks = []
     for t in raw_tasks:
         if not isinstance(t, dict) or not t.get("title"):
@@ -105,9 +105,13 @@ def _parse_proposal(data: dict) -> tuple[str, str, list[ProposedTask]]:
         tasks.append(
             ProposedTask(
                 title=str(t["title"]).strip(),
-                acceptance=[str(a) for a in t.get("acceptance", [])] or ["manually verified"],
-                verification=[str(v) for v in t.get("verification", [])] or ["manual verification"],
-                priority=t.get("priority") if t.get("priority") in {"P0", "P1", "P2", "P3"} else "P2",
+                acceptance=[str(a) for a in t.get("acceptance", [])]
+                or ["manually verified"],
+                verification=[str(v) for v in t.get("verification", [])]
+                or ["manual verification"],
+                priority=t.get("priority")
+                if t.get("priority") in {"P0", "P1", "P2", "P3"}
+                else "P2",
                 files_hint=[str(f) for f in t.get("files_hint", [])],
             )
         )
@@ -123,7 +127,9 @@ def merge_proposed_tasks(
 ) -> tuple[list[str], list[str]]:
     """Deterministic merge: skip titles that already exist as an active task."""
     active_titles = {
-        _normalize_title(t.title) for t in graph.all() if t.status not in {"DONE", "DEFERRED"}
+        _normalize_title(t.title)
+        for t in graph.all()
+        if t.status not in {"DONE", "DEFERRED"}
     }
     added: list[str] = []
     skipped: list[str] = []
@@ -153,10 +159,10 @@ def reconcile(
     *,
     cwd: Path,
     prompt_text: str,
-    plan: "PlanDocument",
+    plan: PlanDocument,
     graph: TaskGraph,
     context_block: str,
-    worker: "Worker",
+    worker: Worker,
     max_retries: int = 1,
 ) -> ReconcileResult:
     """Ask `worker` to classify prompt_text against plan/context, then merge
@@ -165,8 +171,14 @@ def reconcile(
     last_error: Exception | None = None
     response = None
     for attempt in range(max_retries + 1):
-        extra = "" if attempt == 0 else f"\n\nYour previous response could not be parsed ({last_error}). Respond with ONLY the JSON object, no other text."
-        response = worker.propose_tasks(cwd, prompt_text + extra, plan_text, context_block)
+        extra = (
+            ""
+            if attempt == 0
+            else f"\n\nYour previous response could not be parsed ({last_error}). Respond with ONLY the JSON object, no other text."
+        )
+        response = worker.propose_tasks(
+            cwd, prompt_text + extra, plan_text, context_block
+        )
         if not response.ok:
             last_error = RuntimeError(response.error or "worker call failed")
             continue
@@ -177,7 +189,9 @@ def reconcile(
         except (ValueError, json.JSONDecodeError) as e:
             last_error = e
     else:
-        raise ReconciliationError(f"could not reconcile prompt after {max_retries + 1} attempts: {last_error}")
+        raise ReconciliationError(
+            f"could not reconcile prompt after {max_retries + 1} attempts: {last_error}"
+        )
 
     prefix = derive_prefix(plan.meta.project)
     added, skipped = merge_proposed_tasks(graph, proposed, prefix)

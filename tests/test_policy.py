@@ -10,19 +10,28 @@ def teardown_function():
 
 
 def test_effective_workers_default_when_nothing_set():
-    assert policy.effective_workers("demo", ()) == list(policy.DEFAULT_IMPLEMENT_WORKERS)
-    assert policy.effective_workers(None, None) == list(policy.DEFAULT_IMPLEMENT_WORKERS)
+    assert policy.effective_workers("demo", ()) == list(
+        policy.DEFAULT_IMPLEMENT_WORKERS
+    )
+    assert policy.effective_workers(None, None) == list(
+        policy.DEFAULT_IMPLEMENT_WORKERS
+    )
 
 
 def test_effective_workers_cli_wins_over_policy():
     extensions.register_policy("workers", lambda project, stage="implement": ["codex"])
-    assert policy.effective_workers("demo", ("claude", "opencode")) == ["claude", "opencode"]
+    assert policy.effective_workers("demo", ("claude", "opencode")) == [
+        "claude",
+        "opencode",
+    ]
 
 
 def test_effective_workers_uses_policy_when_no_cli_flag():
     extensions.register_policy(
         "workers",
-        lambda project, stage="implement": ["codex", "claude"] if project == "seacommons" else ["claude"],
+        lambda project, stage="implement": (
+            ["codex", "claude"] if project == "seacommons" else ["claude"]
+        ),
     )
     assert policy.effective_workers("seacommons", ()) == ["codex", "claude"]
     assert policy.effective_workers("other", ()) == ["claude"]

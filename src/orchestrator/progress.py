@@ -27,7 +27,9 @@ def _p(line: str) -> None:
 
 def _on_run_started(**kw) -> None:
     task_ids = kw.get("task_ids") or []
-    _p(f"[{kw.get('run_id')}] {len(task_ids)} task(s), {kw.get('batch_count')} batch(es): {', '.join(task_ids) or '(none)'}")
+    _p(
+        f"[{kw.get('run_id')}] {len(task_ids)} task(s), {kw.get('batch_count')} batch(es): {', '.join(task_ids) or '(none)'}"
+    )
 
 
 def _on_reconcile_done(**kw) -> None:
@@ -43,19 +45,25 @@ def _on_task_started(**kw) -> None:
 
 def _on_task_implemented(**kw) -> None:
     task, response = kw["task"], kw["response"]
-    _p(f"  {task.id}: {kw['worker']} done implementing ({response.duration_seconds:.1f}s)")
+    _p(
+        f"  {task.id}: {kw['worker']} done implementing ({response.duration_seconds:.1f}s)"
+    )
 
 
 def _on_task_verified(**kw) -> None:
     task, results = kw["task"], kw["results"]
     status = "PASS" if kw["passed"] else "FAIL"
-    _p(f"  {task.id}: verification {status} ({len(results)} command(s), attempt {kw['attempt']})")
+    _p(
+        f"  {task.id}: verification {status} ({len(results)} command(s), attempt {kw['attempt']})"
+    )
 
 
 def _on_task_debug_attempt(**kw) -> None:
     task, record = kw["task"], kw["record"]
     outcome = "fixed" if record.passed else "still failing"
-    _p(f"  {task.id}: debug attempt {record.attempt} by {record.debugger_worker} ({record.classification}) -> {outcome}")
+    _p(
+        f"  {task.id}: debug attempt {record.attempt} by {record.debugger_worker} ({record.classification}) -> {outcome}"
+    )
 
 
 def _on_task_done(**kw) -> None:
@@ -73,8 +81,10 @@ def _on_run_finished(**kw) -> None:
 
 
 def _on_possible_overlap(**kw) -> None:
-    _p(f"  possible overlap: {kw['task_a']} and {kw['task_b']} both touch {kw['path']} "
-       f"-- serialised, but their branches will conflict at integration")
+    _p(
+        f"  possible overlap: {kw['task_a']} and {kw['task_b']} both touch {kw['path']} "
+        f"-- serialised, but their branches will conflict at integration"
+    )
 
 
 _HANDLERS = {

@@ -132,7 +132,9 @@ from my_private_pkg.workers import GeminiWorker
 
 extensions.register_worker("gemini", GeminiWorker)
 extensions.register_context_provider(my_extra_context_fn)
-extensions.register_policy("max_debug_attempts", lambda project: 5 if project == "seacommons" else 3)
+extensions.register_policy(
+    "max_debug_attempts", lambda project: 5 if project == "seacommons" else 3
+)
 extensions.register_hook("after_task", notify_slack)
 ```
 

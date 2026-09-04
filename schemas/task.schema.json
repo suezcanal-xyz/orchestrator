@@ -17,7 +17,7 @@
     "acceptance": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
     "verification": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
     "priority": { "type": "string", "enum": ["P0", "P1", "P2", "P3"] },
-    "worker": { "type": ["string", "null"], "enum": ["codex", "claude", null] },
+    "worker": { "type": ["string", "null"] },
     "assigned_worktree": { "type": ["string", "null"] },
     "attempts": { "type": "integer", "minimum": 0 },
     "notes": { "type": "string" }

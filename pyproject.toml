@@ -40,6 +40,7 @@ Issues = "https://github.com/suezcanal-xyz/orchestrator/issues"
 dev = [
     "pytest>=8.0",
     "httpx>=0.27",
+    "ruff>=0.16.0",
 ]
 dashboard = [
     "fastapi>=0.110",
@@ -58,3 +59,6 @@ artifacts = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"

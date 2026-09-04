@@ -8,14 +8,14 @@ import re
 import subprocess
 
 import pytest
-
 from conftest import init_repo
+
 from orchestrator import engine, git, state
 from orchestrator.task_graph import Task, TaskGraph
 from orchestrator.workers.base import Worker, WorkerResponse
 
-TEST_ADD_PY = 'from add_mod import add\n\ndef test_add():\n    assert add(2, 3) == 5\n'
-TEST_MUL_PY = 'from mul_mod import mul\n\ndef test_mul():\n    assert mul(2, 3) == 6\n'
+TEST_ADD_PY = "from add_mod import add\n\ndef test_add():\n    assert add(2, 3) == 5\n"
+TEST_MUL_PY = "from mul_mod import mul\n\ndef test_mul():\n    assert mul(2, 3) == 6\n"
 
 
 class ScriptedWorker(Worker):
@@ -39,21 +39,31 @@ class ScriptedWorker(Worker):
         if action:
             action(cwd)
         return WorkerResponse(
-            ok=True, summary=f"{stage} done for {task_id}", raw_output="", duration_seconds=0.01, worker=self.name
+            ok=True,
+            summary=f"{stage} done for {task_id}",
+            raw_output="",
+            duration_seconds=0.01,
+            worker=self.name,
         )
 
 
 def write_correct_add(cwd):
-    (cwd / "add_mod.py").write_text("def add(a, b):\n    return a + b\n", encoding="utf-8")
+    (cwd / "add_mod.py").write_text(
+        "def add(a, b):\n    return a + b\n", encoding="utf-8"
+    )
 
 
 def write_wrong_mul(cwd):
     # intentional bug: addition instead of multiplication (spec section 22 step 11)
-    (cwd / "mul_mod.py").write_text("def mul(a, b):\n    return a + b\n", encoding="utf-8")
+    (cwd / "mul_mod.py").write_text(
+        "def mul(a, b):\n    return a + b\n", encoding="utf-8"
+    )
 
 
 def write_correct_mul(cwd):
-    (cwd / "mul_mod.py").write_text("def mul(a, b):\n    return a * b\n", encoding="utf-8")
+    (cwd / "mul_mod.py").write_text(
+        "def mul(a, b):\n    return a * b\n", encoding="utf-8"
+    )
 
 
 @pytest.fixture
@@ -94,13 +104,22 @@ def test_closed_loop_happy_path_and_cross_model_debug(demo_repo):
     _seed_tasks(repo)
     main_head_before = git.head_commit(repo)
 
-    claude = ScriptedWorker("claude", {
-        ("TEST-001", "implement"): write_correct_add,
-        ("TEST-002", "debug"): write_correct_mul,  # cross-model: claude fixes codex's bug
-    })
-    codex = ScriptedWorker("codex", {
-        ("TEST-002", "implement"): write_wrong_mul,
-    })
+    claude = ScriptedWorker(
+        "claude",
+        {
+            ("TEST-001", "implement"): write_correct_add,
+            (
+                "TEST-002",
+                "debug",
+            ): write_correct_mul,  # cross-model: claude fixes codex's bug
+        },
+    )
+    codex = ScriptedWorker(
+        "codex",
+        {
+            ("TEST-002", "implement"): write_wrong_mul,
+        },
+    )
 
     result = engine.run(repo=repo, prompt_text=None, implement_workers=[claude, codex])
 
@@ -109,7 +128,9 @@ def test_closed_loop_happy_path_and_cross_model_debug(demo_repo):
     assert outcomes["TEST-001"].debug_attempts == 0
 
     assert outcomes["TEST-002"].status == "DONE"
-    assert outcomes["TEST-002"].debug_attempts == 1  # failed once, fixed on first debug attempt
+    assert (
+        outcomes["TEST-002"].debug_attempts == 1
+    )  # failed once, fixed on first debug attempt
 
     # cross-model debugging actually happened: codex implemented, claude debugged
     assert ("TEST-002", "implement") in codex.calls
@@ -142,7 +163,9 @@ def test_closed_loop_happy_path_and_cross_model_debug(demo_repo):
 
     # per-task focused context: TEST-001's implement prompt names its own
     # hinted file, not the other task's
-    impl_prompt = next(p for p, (tid, st) in zip(claude.prompts, claude.calls) if tid == "TEST-001")
+    impl_prompt = next(
+        p for p, (tid, st) in zip(claude.prompts, claude.calls) if tid == "TEST-001"
+    )
     assert "add_mod.py" in impl_prompt
 
     # cost accounting: VERDICT has a Cost section and RunResult carries the summary
@@ -158,12 +181,17 @@ def test_milestone_gate_blocks_ready_even_when_every_task_is_done(tmp_path):
     from orchestrator import plan as plan_mod
 
     doc = plan_mod.new_plan("g", current_version="0.0.0", target_version="0.1.0")
-    doc.set_section("Verification Commands",
-                    "- python -c \"pass\"\n- python -c \"import sys; sys.exit(2)\"")
+    doc.set_section(
+        "Verification Commands",
+        '- python -c "pass"\n- python -c "import sys; sys.exit(2)"',
+    )
     graph = TaskGraph([Task(id="G-1", title="t", status="DONE")])
 
     v = engine.build_verdict(tmp_path, doc, graph)
-    assert [g.command for g in v.gate] == ['python -c "pass"', 'python -c "import sys; sys.exit(2)"']
+    assert [g.command for g in v.gate] == [
+        'python -c "pass"',
+        'python -c "import sys; sys.exit(2)"',
+    ]
     assert [g.passed for g in v.gate] == [True, False]
     assert v.ready is False  # task DONE but gate failed
     assert v.result_status.value == "BLOCKED"
@@ -176,7 +204,7 @@ def test_milestone_gate_all_pass_with_done_tasks_is_ready(tmp_path):
     from orchestrator import plan as plan_mod
 
     doc = plan_mod.new_plan("g2", current_version="0.0.0", target_version="0.1.0")
-    doc.set_section("Verification Commands", "- python -c \"pass\"")
+    doc.set_section("Verification Commands", '- python -c "pass"')
     graph = TaskGraph([Task(id="G-1", title="t", status="DONE")])
     v = engine.build_verdict(tmp_path, doc, graph)
     assert v.ready is True
@@ -186,7 +214,9 @@ def test_milestone_gate_all_pass_with_done_tasks_is_ready(tmp_path):
 def test_verdict_flags_a_milestone_with_no_acceptance_criteria(tmp_path):
     from orchestrator import plan as plan_mod
 
-    doc = plan_mod.new_plan("m", current_version="0.0.0", target_version="0.1.0")  # criteria undefined
+    doc = plan_mod.new_plan(
+        "m", current_version="0.0.0", target_version="0.1.0"
+    )  # criteria undefined
     graph = TaskGraph([Task(id="M-1", title="t", status="DONE")])
     v = engine.build_verdict(tmp_path, doc, graph)
     assert v.ready is True  # task is DONE
@@ -208,12 +238,14 @@ def test_ingest_records_a_blocker_when_criteria_are_undefined(tmp_path, monkeypa
     assert "Milestone acceptance not defined" in blockers
 
     r2 = engine.ingest(repo, "another thing", W())  # not duplicated
-    assert r2.plan.get_section("Blockers").count("Milestone acceptance not defined") == 1
+    assert (
+        r2.plan.get_section("Blockers").count("Milestone acceptance not defined") == 1
+    )
 
     # once criteria + commands are filled in, the blocker is cleared
     doc = plan_mod.load(repo / "docs" / "PLAN.md")
     doc.set_section("Acceptance Criteria", "- op returns 1")
-    doc.set_section("Verification Commands", "- python -c \"pass\"")
+    doc.set_section("Verification Commands", '- python -c "pass"')
     doc.save(repo / "docs" / "PLAN.md")
     r3 = engine.ingest(repo, "third", W())
     assert "Milestone acceptance not defined" not in r3.plan.get_section("Blockers")
@@ -240,11 +272,18 @@ def test_verdict_checks_integrated_task_work_not_the_untouched_base(tmp_path):
     )
     state.save_task_store(
         repo,
-        TaskGraph([Task(
-            id="OP-1", title="make op() return 42", status="READY",
-            acceptance=["op() == 42"], verification=["python -m pytest tests/test_op.py -q"],
-            files_hint=["op.py"],
-        )]),
+        TaskGraph(
+            [
+                Task(
+                    id="OP-1",
+                    title="make op() return 42",
+                    status="READY",
+                    acceptance=["op() == 42"],
+                    verification=["python -m pytest tests/test_op.py -q"],
+                    files_hint=["op.py"],
+                )
+            ]
+        ),
     )
 
     def fix_op(cwd):
@@ -261,24 +300,54 @@ def test_verdict_checks_integrated_task_work_not_the_untouched_base(tmp_path):
 
 
 def test_run_only_task_ids_executes_just_the_selected_task(tmp_path):
-    repo = init_repo(tmp_path / "sel", files={
-        "a.py": "x = 0\n", "b.py": "x = 0\n",
-        "tests/test_a.py": "import sys, pathlib\nsys.path.insert(0, str(pathlib.Path(__file__).parents[1]))\n"
-                           "from a import x\n\ndef test_a():\n    assert x == 1\n",
-        "tests/test_b.py": "import sys, pathlib\nsys.path.insert(0, str(pathlib.Path(__file__).parents[1]))\n"
-                           "from b import x\n\ndef test_b():\n    assert x == 1\n",
-    })
-    state.save_task_store(repo, TaskGraph([
-        Task(id="SEL-1", title="fix a", status="READY", acceptance=["x==1"],
-             verification=["python -m pytest tests/test_a.py -q"], files_hint=["a.py"]),
-        Task(id="SEL-2", title="fix b", status="READY", acceptance=["x==1"],
-             verification=["python -m pytest tests/test_b.py -q"], files_hint=["b.py"]),
-    ]))
-    w = ScriptedWorker("claude", {
-        ("SEL-1", "implement"): lambda cwd: (cwd / "a.py").write_text("x = 1\n", encoding="utf-8"),
-        ("SEL-2", "implement"): lambda cwd: (cwd / "b.py").write_text("x = 1\n", encoding="utf-8"),
-    })
-    result = engine.run(repo=repo, prompt_text=None, implement_workers=[w], only_task_ids={"SEL-1"})
+    repo = init_repo(
+        tmp_path / "sel",
+        files={
+            "a.py": "x = 0\n",
+            "b.py": "x = 0\n",
+            "tests/test_a.py": "import sys, pathlib\nsys.path.insert(0, str(pathlib.Path(__file__).parents[1]))\n"
+            "from a import x\n\ndef test_a():\n    assert x == 1\n",
+            "tests/test_b.py": "import sys, pathlib\nsys.path.insert(0, str(pathlib.Path(__file__).parents[1]))\n"
+            "from b import x\n\ndef test_b():\n    assert x == 1\n",
+        },
+    )
+    state.save_task_store(
+        repo,
+        TaskGraph(
+            [
+                Task(
+                    id="SEL-1",
+                    title="fix a",
+                    status="READY",
+                    acceptance=["x==1"],
+                    verification=["python -m pytest tests/test_a.py -q"],
+                    files_hint=["a.py"],
+                ),
+                Task(
+                    id="SEL-2",
+                    title="fix b",
+                    status="READY",
+                    acceptance=["x==1"],
+                    verification=["python -m pytest tests/test_b.py -q"],
+                    files_hint=["b.py"],
+                ),
+            ]
+        ),
+    )
+    w = ScriptedWorker(
+        "claude",
+        {
+            ("SEL-1", "implement"): lambda cwd: (cwd / "a.py").write_text(
+                "x = 1\n", encoding="utf-8"
+            ),
+            ("SEL-2", "implement"): lambda cwd: (cwd / "b.py").write_text(
+                "x = 1\n", encoding="utf-8"
+            ),
+        },
+    )
+    result = engine.run(
+        repo=repo, prompt_text=None, implement_workers=[w], only_task_ids={"SEL-1"}
+    )
     assert [o.task_id for o in result.task_outcomes] == ["SEL-1"]
     assert result.task_outcomes[0].status == "DONE"
     assert ("SEL-2", "implement") not in w.calls
@@ -288,27 +357,55 @@ def test_scoped_run_reports_its_own_status_not_the_milestone_verdict(tmp_path):
     """A --task run that finishes its selected task is SCOPED_OK / ok=True,
     even though the milestone still has an un-run task the verdict marks
     FAIL. The milestone status in PLAN.md is not touched by a scoped run."""
-    repo = init_repo(tmp_path / "scoped", files={
-        "a.py": "x = 0\n", "b.py": "x = 0\n",
-        "tests/test_a.py": "import sys, pathlib\nsys.path.insert(0, str(pathlib.Path(__file__).parents[1]))\n"
-                           "from a import x\n\ndef test_a():\n    assert x == 1\n",
-        "tests/test_b.py": "import sys, pathlib\nsys.path.insert(0, str(pathlib.Path(__file__).parents[1]))\n"
-                           "from b import x\n\ndef test_b():\n    assert x == 1\n",
-        "docs/PLAN.md": (
-            "---\nproject: scoped\ncurrent_version: 0.0.0\ntarget_version: 0.1.0\n"
-            "active_milestone: m\nstatus: IN_PROGRESS\n---\n# PROJECT PLAN\n\n## Tasks\n\n_x_\n"
+    repo = init_repo(
+        tmp_path / "scoped",
+        files={
+            "a.py": "x = 0\n",
+            "b.py": "x = 0\n",
+            "tests/test_a.py": "import sys, pathlib\nsys.path.insert(0, str(pathlib.Path(__file__).parents[1]))\n"
+            "from a import x\n\ndef test_a():\n    assert x == 1\n",
+            "tests/test_b.py": "import sys, pathlib\nsys.path.insert(0, str(pathlib.Path(__file__).parents[1]))\n"
+            "from b import x\n\ndef test_b():\n    assert x == 1\n",
+            "docs/PLAN.md": (
+                "---\nproject: scoped\ncurrent_version: 0.0.0\ntarget_version: 0.1.0\n"
+                "active_milestone: m\nstatus: IN_PROGRESS\n---\n# PROJECT PLAN\n\n## Tasks\n\n_x_\n"
+            ),
+        },
+    )
+    state.save_task_store(
+        repo,
+        TaskGraph(
+            [
+                Task(
+                    id="SC-1",
+                    title="fix a",
+                    status="READY",
+                    acceptance=["x==1"],
+                    verification=["python -m pytest tests/test_a.py -q"],
+                    files_hint=["a.py"],
+                ),
+                Task(
+                    id="SC-2",
+                    title="fix b",
+                    status="READY",
+                    acceptance=["x==1"],
+                    verification=["python -m pytest tests/test_b.py -q"],
+                    files_hint=["b.py"],
+                ),
+            ]
         ),
-    })
-    state.save_task_store(repo, TaskGraph([
-        Task(id="SC-1", title="fix a", status="READY", acceptance=["x==1"],
-             verification=["python -m pytest tests/test_a.py -q"], files_hint=["a.py"]),
-        Task(id="SC-2", title="fix b", status="READY", acceptance=["x==1"],
-             verification=["python -m pytest tests/test_b.py -q"], files_hint=["b.py"]),
-    ]))
-    w = ScriptedWorker("claude", {
-        ("SC-1", "implement"): lambda cwd: (cwd / "a.py").write_text("x = 1\n", encoding="utf-8"),
-    })
-    result = engine.run(repo=repo, prompt_text=None, implement_workers=[w], only_task_ids={"SC-1"})
+    )
+    w = ScriptedWorker(
+        "claude",
+        {
+            ("SC-1", "implement"): lambda cwd: (cwd / "a.py").write_text(
+                "x = 1\n", encoding="utf-8"
+            ),
+        },
+    )
+    result = engine.run(
+        repo=repo, prompt_text=None, implement_workers=[w], only_task_ids={"SC-1"}
+    )
 
     assert result.scoped is True
     assert result.run_status == "SCOPED_OK"
@@ -319,23 +416,48 @@ def test_scoped_run_reports_its_own_status_not_the_milestone_verdict(tmp_path):
     assert "scoped run" in result.verdict.notes
     # PLAN.md milestone status untouched by a scoped run
     from orchestrator import plan as plan_mod
+
     assert plan_mod.load(repo / "docs" / "PLAN.md").meta.status.value == "IN_PROGRESS"
 
 
 def test_run_only_task_ids_rejects_an_unknown_or_dependency_gap(tmp_path):
-    repo = init_repo(tmp_path / "sel2", files={
-        "tests/test_x.py": "def test_x():\n    assert True\n",
-    })
-    state.save_task_store(repo, TaskGraph([
-        Task(id="P-1", title="p1", status="READY", verification=["python -m pytest tests/test_x.py -q"]),
-        Task(id="P-2", title="p2", status="READY", depends_on=["P-1"],
-             verification=["python -m pytest tests/test_x.py -q"]),
-    ]))
+    repo = init_repo(
+        tmp_path / "sel2",
+        files={
+            "tests/test_x.py": "def test_x():\n    assert True\n",
+        },
+    )
+    state.save_task_store(
+        repo,
+        TaskGraph(
+            [
+                Task(
+                    id="P-1",
+                    title="p1",
+                    status="READY",
+                    verification=["python -m pytest tests/test_x.py -q"],
+                ),
+                Task(
+                    id="P-2",
+                    title="p2",
+                    status="READY",
+                    depends_on=["P-1"],
+                    verification=["python -m pytest tests/test_x.py -q"],
+                ),
+            ]
+        ),
+    )
     w = ScriptedWorker("claude", {})
     with pytest.raises(ValueError, match="not runnable"):
-        engine.run(repo=repo, prompt_text=None, implement_workers=[w], only_task_ids={"NOPE"})
-    with pytest.raises(ValueError, match="not runnable"):  # P-2's dependency P-1 is still pending
-        engine.run(repo=repo, prompt_text=None, implement_workers=[w], only_task_ids={"P-2"})
+        engine.run(
+            repo=repo, prompt_text=None, implement_workers=[w], only_task_ids={"NOPE"}
+        )
+    with pytest.raises(
+        ValueError, match="not runnable"
+    ):  # P-2's dependency P-1 is still pending
+        engine.run(
+            repo=repo, prompt_text=None, implement_workers=[w], only_task_ids={"P-2"}
+        )
 
 
 def test_run_base_ref_bases_worktrees_on_a_feature_branch(tmp_path):
@@ -346,29 +468,67 @@ def test_run_base_ref_bases_worktrees_on_a_feature_branch(tmp_path):
     (repo / "only_on_feat.py").write_text("VALUE = 0\n", encoding="utf-8")
     (repo / "tests").mkdir(exist_ok=True)
     (repo / "tests" / "test_feat.py").write_text(
-        "from only_on_feat import VALUE\n\ndef test_v():\n    assert VALUE == 42\n", encoding="utf-8")
+        "from only_on_feat import VALUE\n\ndef test_v():\n    assert VALUE == 42\n",
+        encoding="utf-8",
+    )
     subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
     subprocess.run(["git", "commit", "-q", "-m", "wip work"], cwd=repo, check=True)
-    subprocess.run(["git", "checkout", "-q", "main"], cwd=repo, check=True)  # default branch is behind
+    subprocess.run(
+        ["git", "checkout", "-q", "main"], cwd=repo, check=True
+    )  # default branch is behind
 
-    state.save_task_store(repo, TaskGraph([
-        Task(id="W-1", title="set VALUE", status="READY", acceptance=["VALUE==42"],
-             verification=["python -m pytest tests/test_feat.py -q"], files_hint=["only_on_feat.py"]),
-    ]))
-    w = ScriptedWorker("claude", {
-        ("W-1", "implement"): lambda cwd: (cwd / "only_on_feat.py").write_text("VALUE = 42\n", encoding="utf-8"),
-    })
+    state.save_task_store(
+        repo,
+        TaskGraph(
+            [
+                Task(
+                    id="W-1",
+                    title="set VALUE",
+                    status="READY",
+                    acceptance=["VALUE==42"],
+                    verification=["python -m pytest tests/test_feat.py -q"],
+                    files_hint=["only_on_feat.py"],
+                ),
+            ]
+        ),
+    )
+    w = ScriptedWorker(
+        "claude",
+        {
+            ("W-1", "implement"): lambda cwd: (cwd / "only_on_feat.py").write_text(
+                "VALUE = 42\n", encoding="utf-8"
+            ),
+        },
+    )
 
     # without --base: worktree off main, file absent -> BLOCKED
-    r_main = engine.run(repo=repo, prompt_text=None, implement_workers=[w], only_task_ids={"W-1"})
+    r_main = engine.run(
+        repo=repo, prompt_text=None, implement_workers=[w], only_task_ids={"W-1"}
+    )
     assert r_main.task_outcomes[0].status == "BLOCKED"
 
-    state.save_task_store(repo, TaskGraph([
-        Task(id="W-1", title="set VALUE", status="READY", acceptance=["VALUE==42"],
-             verification=["python -m pytest tests/test_feat.py -q"], files_hint=["only_on_feat.py"]),
-    ]))
-    r_feat = engine.run(repo=repo, prompt_text=None, implement_workers=[w],
-                        only_task_ids={"W-1"}, base_ref="feat/wip")
+    state.save_task_store(
+        repo,
+        TaskGraph(
+            [
+                Task(
+                    id="W-1",
+                    title="set VALUE",
+                    status="READY",
+                    acceptance=["VALUE==42"],
+                    verification=["python -m pytest tests/test_feat.py -q"],
+                    files_hint=["only_on_feat.py"],
+                ),
+            ]
+        ),
+    )
+    r_feat = engine.run(
+        repo=repo,
+        prompt_text=None,
+        implement_workers=[w],
+        only_task_ids={"W-1"},
+        base_ref="feat/wip",
+    )
     assert r_feat.task_outcomes[0].status == "DONE"
     assert r_feat.verdict.result_status.value == "READY_FOR_REVIEW"
     assert git.current_branch(repo) == "main"  # protected branch untouched
@@ -388,7 +548,9 @@ def test_run_pauses_cleanly_on_a_reconcile_session_limit(demo_repo, monkeypatch)
     monkeypatch.setattr(reconcile_mod, "reconcile", boom)
 
     w = ScriptedWorker("claude", {})
-    result = engine.run(repo=demo_repo, prompt_text="do something", implement_workers=[w])
+    result = engine.run(
+        repo=demo_repo, prompt_text="do something", implement_workers=[w]
+    )
 
     assert result.run_status == "BLOCKED_SESSION_LIMIT"
     assert result.session_limit_hint and "2:40pm" in result.session_limit_hint
@@ -402,44 +564,94 @@ def test_run_reconcile_error_that_is_not_a_limit_still_raises(demo_repo, monkeyp
     from orchestrator import reconcile as reconcile_mod
 
     def boom(**kw):
-        raise reconcile_mod.ReconciliationError("could not reconcile prompt after 2 attempts: bad JSON")
+        raise reconcile_mod.ReconciliationError(
+            "could not reconcile prompt after 2 attempts: bad JSON"
+        )
 
     monkeypatch.setattr(reconcile_mod, "reconcile", boom)
     with pytest.raises(reconcile_mod.ReconciliationError):
-        engine.run(repo=demo_repo, prompt_text="x", implement_workers=[ScriptedWorker("claude", {})])
+        engine.run(
+            repo=demo_repo,
+            prompt_text="x",
+            implement_workers=[ScriptedWorker("claude", {})],
+        )
 
 
 def test_run_resume_continues_from_the_task_store_and_links_the_prior_run(tmp_path):
-    repo = init_repo(tmp_path / "res", files={
-        "a.py": "x = 0\n", "b.py": "x = 0\n",
-        "tests/test_a.py": "import sys,pathlib\nsys.path.insert(0,str(pathlib.Path(__file__).parents[1]))\n"
-                           "from a import x\n\ndef test_a():\n    assert x == 1\n",
-        "tests/test_b.py": "import sys,pathlib\nsys.path.insert(0,str(pathlib.Path(__file__).parents[1]))\n"
-                           "from b import x\n\ndef test_b():\n    assert x == 1\n",
-        "docs/PLAN.md": (
-            "---\nproject: res\ncurrent_version: 0.0.0\ntarget_version: 0.1.0\n"
-            "active_milestone: m\nstatus: IN_PROGRESS\n---\n# PROJECT PLAN\n\n## Tasks\n\n_x_\n"
+    repo = init_repo(
+        tmp_path / "res",
+        files={
+            "a.py": "x = 0\n",
+            "b.py": "x = 0\n",
+            "tests/test_a.py": "import sys,pathlib\nsys.path.insert(0,str(pathlib.Path(__file__).parents[1]))\n"
+            "from a import x\n\ndef test_a():\n    assert x == 1\n",
+            "tests/test_b.py": "import sys,pathlib\nsys.path.insert(0,str(pathlib.Path(__file__).parents[1]))\n"
+            "from b import x\n\ndef test_b():\n    assert x == 1\n",
+            "docs/PLAN.md": (
+                "---\nproject: res\ncurrent_version: 0.0.0\ntarget_version: 0.1.0\n"
+                "active_milestone: m\nstatus: IN_PROGRESS\n---\n# PROJECT PLAN\n\n## Tasks\n\n_x_\n"
+            ),
+        },
+    )
+    state.save_task_store(
+        repo,
+        TaskGraph(
+            [
+                Task(
+                    id="RS-1",
+                    title="a",
+                    status="READY",
+                    verification=["python -m pytest tests/test_a.py -q"],
+                    files_hint=["a.py"],
+                ),
+                Task(
+                    id="RS-2",
+                    title="b",
+                    status="READY",
+                    verification=["python -m pytest tests/test_b.py -q"],
+                    files_hint=["b.py"],
+                ),
+            ]
         ),
-    })
-    state.save_task_store(repo, TaskGraph([
-        Task(id="RS-1", title="a", status="READY", verification=["python -m pytest tests/test_a.py -q"], files_hint=["a.py"]),
-        Task(id="RS-2", title="b", status="READY", verification=["python -m pytest tests/test_b.py -q"], files_hint=["b.py"]),
-    ]))
+    )
 
     # run 1: only RS-1, it succeeds
-    w1 = ScriptedWorker("claude", {("RS-1", "implement"): lambda cwd: (cwd / "a.py").write_text("x = 1\n", encoding="utf-8")})
-    r1 = engine.run(repo=repo, prompt_text=None, implement_workers=[w1], only_task_ids={"RS-1"})
+    w1 = ScriptedWorker(
+        "claude",
+        {
+            ("RS-1", "implement"): lambda cwd: (cwd / "a.py").write_text(
+                "x = 1\n", encoding="utf-8"
+            )
+        },
+    )
+    r1 = engine.run(
+        repo=repo, prompt_text=None, implement_workers=[w1], only_task_ids={"RS-1"}
+    )
     assert r1.task_outcomes[0].status == "DONE"
     run1_id = r1.run_paths.run_id
     run1_plan_before = r1.run_paths.plan_before.read_text(encoding="utf-8")
 
     # unknown resume id errors
     with pytest.raises(ValueError, match="no run"):
-        engine.run(repo=repo, prompt_text=None, implement_workers=[w1], resume_from="nope-123")
+        engine.run(
+            repo=repo, prompt_text=None, implement_workers=[w1], resume_from="nope-123"
+        )
 
     # run 2: resume -- RS-1 already DONE, only RS-2 runs; prior plan carried forward
-    w2 = ScriptedWorker("claude", {("RS-2", "implement"): lambda cwd: (cwd / "b.py").write_text("x = 1\n", encoding="utf-8")})
-    r2 = engine.run(repo=repo, prompt_text="ignored on resume", implement_workers=[w2], resume_from=run1_id)
+    w2 = ScriptedWorker(
+        "claude",
+        {
+            ("RS-2", "implement"): lambda cwd: (cwd / "b.py").write_text(
+                "x = 1\n", encoding="utf-8"
+            )
+        },
+    )
+    r2 = engine.run(
+        repo=repo,
+        prompt_text="ignored on resume",
+        implement_workers=[w2],
+        resume_from=run1_id,
+    )
     assert [o.task_id for o in r2.task_outcomes] == ["RS-2"]
     assert r2.task_outcomes[0].status == "DONE"
     assert r2.manifest.resumed_from == run1_id
@@ -452,15 +664,36 @@ def test_run_warns_about_tasks_that_touch_the_same_file(tmp_path):
     from orchestrator import extensions
 
     repo = init_repo(tmp_path / "ov")
-    state.save_task_store(repo, TaskGraph([
-        Task(id="OV-1", title="a", status="READY", verification=['python -c "pass"'], files_hint=["./m.py"]),
-        Task(id="OV-2", title="b", status="READY", verification=['python -c "pass"'], files_hint=["m.py"]),
-    ]))
+    state.save_task_store(
+        repo,
+        TaskGraph(
+            [
+                Task(
+                    id="OV-1",
+                    title="a",
+                    status="READY",
+                    verification=['python -c "pass"'],
+                    files_hint=["./m.py"],
+                ),
+                Task(
+                    id="OV-2",
+                    title="b",
+                    status="READY",
+                    verification=['python -c "pass"'],
+                    files_hint=["m.py"],
+                ),
+            ]
+        ),
+    )
     seen = []
-    extensions.register_hook("possible_overlap",
-                             lambda **kw: seen.append((kw["task_a"], kw["task_b"], kw["path"])))
+    extensions.register_hook(
+        "possible_overlap",
+        lambda **kw: seen.append((kw["task_a"], kw["task_b"], kw["path"])),
+    )
 
-    engine.run(repo=repo, prompt_text=None, implement_workers=[ScriptedWorker("claude", {})])
+    engine.run(
+        repo=repo, prompt_text=None, implement_workers=[ScriptedWorker("claude", {})]
+    )
     assert ("OV-1", "OV-2", "m.py") in seen
 
 
@@ -509,16 +742,27 @@ class ReconcileOnlyWorker(Worker):
             f'"tasks": {self._tasks_json}}}'
         )
         return WorkerResponse(
-            ok=True, summary=payload, raw_output=payload, duration_seconds=0.02,
-            worker=self.name, cost_usd=0.003,
-            extra={"usage": {"input_tokens": 4000, "output_tokens": 120, "cache_read_tokens": 0}},
+            ok=True,
+            summary=payload,
+            raw_output=payload,
+            duration_seconds=0.02,
+            worker=self.name,
+            cost_usd=0.003,
+            extra={
+                "usage": {
+                    "input_tokens": 4000,
+                    "output_tokens": 120,
+                    "cache_read_tokens": 0,
+                }
+            },
         )
 
 
 def test_run_with_nothing_to_do_is_not_blocked(demo_repo):
     repo = demo_repo
     result = engine.run(
-        repo=repo, prompt_text="please do the thing that is already done",
+        repo=repo,
+        prompt_text="please do the thing that is already done",
         implement_workers=[ReconcileOnlyWorker()],
     )
     assert result.nothing_to_do is True

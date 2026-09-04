@@ -37,10 +37,16 @@ def live_demo_repo(tmp_path):
     dest = tmp_path / "calc-demo"
     shutil.copytree(DEMO_REPO_SRC, dest)
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=dest, check=True)
-    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=dest, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "t@example.com"], cwd=dest, check=True
+    )
     subprocess.run(["git", "config", "user.name", "T"], cwd=dest, check=True)
     subprocess.run(["git", "add", "-A"], cwd=dest, check=True)
-    subprocess.run(["git", "commit", "-q", "-m", "initial (known-broken calc-demo)"], cwd=dest, check=True)
+    subprocess.run(
+        ["git", "commit", "-q", "-m", "initial (known-broken calc-demo)"],
+        cwd=dest,
+        check=True,
+    )
     return dest
 
 
@@ -73,7 +79,9 @@ def test_v0_1_0_closed_development_loop(live_demo_repo):
 
     print("\n--- task outcomes ---")
     for o in result.task_outcomes:
-        print(f"{o.task_id}: {o.status} (worker debug attempts: {o.debug_attempts}) -- {o.reason}")
+        print(
+            f"{o.task_id}: {o.status} (worker debug attempts: {o.debug_attempts}) -- {o.reason}"
+        )
     print("\n--- verdict ---")
     print(result.verdict.render())
     print(f"run directory: {result.run_paths.root}")
@@ -82,13 +90,15 @@ def test_v0_1_0_closed_development_loop(live_demo_repo):
     assert len(result.task_outcomes) >= 2
 
     # steps 7-8: both workers were actually used across the run's tasks
-    used_workers = {o.task_id: None for o in result.task_outcomes}
+    {o.task_id: None for o in result.task_outcomes}
     # (the assignment itself is verified indirectly: each task's worktree
     # branch and evidence file exist per-worker below)
 
     # step 9: isolated worktrees -- branch naming convention held
     for o in result.task_outcomes:
-        assert o.branch is not None and o.branch.startswith(f"orchestrator/{result.manifest.run_id}/")
+        assert o.branch is not None and o.branch.startswith(
+            f"orchestrator/{result.manifest.run_id}/"
+        )
 
     # step 17: protected branch untouched -- no new commit landed on main,
     # and we're still on it
@@ -121,4 +131,6 @@ def test_v0_1_0_closed_development_loop(live_demo_repo):
 
     # final outcome: every task should have ended DONE for a true v0.1.0 pass.
     blocked = [o for o in result.task_outcomes if o.status != "DONE"]
-    assert not blocked, f"tasks left BLOCKED: {[(o.task_id, o.reason) for o in blocked]}"
+    assert not blocked, (
+        f"tasks left BLOCKED: {[(o.task_id, o.reason) for o in blocked]}"
+    )

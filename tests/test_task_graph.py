@@ -17,7 +17,9 @@ def make_task(id_, deps=None, files=None, status="READY", priority="P2"):
 
 
 def test_topological_order_respects_dependencies():
-    g = TaskGraph([make_task("A"), make_task("B", deps=["A"]), make_task("C", deps=["B"])])
+    g = TaskGraph(
+        [make_task("A"), make_task("B", deps=["A"]), make_task("C", deps=["B"])]
+    )
     order = g.topological_order()
     assert order.index("A") < order.index("B") < order.index("C")
 
@@ -35,7 +37,13 @@ def test_dangling_dependency_rejected():
 
 
 def test_ready_tasks_wait_for_done_dependencies():
-    g = TaskGraph([make_task("A", status="DONE"), make_task("B", deps=["A"]), make_task("C", deps=["B"])])
+    g = TaskGraph(
+        [
+            make_task("A", status="DONE"),
+            make_task("B", deps=["A"]),
+            make_task("C", deps=["B"]),
+        ]
+    )
     ready_ids = {t.id for t in g.ready_tasks()}
     assert ready_ids == {"B"}
 
@@ -70,20 +78,24 @@ def test_tasks_without_files_hint_scheduled_alone():
 
 
 def test_overlap_is_detected_across_path_spellings():
-    g = TaskGraph([
-        make_task("A", files=["./src/x.py"]),
-        make_task("B", files=["src\\x.py"]),
-    ])
+    g = TaskGraph(
+        [
+            make_task("A", files=["./src/x.py"]),
+            make_task("B", files=["src\\x.py"]),
+        ]
+    )
     assert len(g.parallelizable_batches()) == 2  # serialised
     assert g.likely_overlaps() == [("A", "B", "src/x.py")]
 
 
 def test_likely_overlaps_reports_shared_files_not_disjoint_ones():
-    g = TaskGraph([
-        make_task("SC-1", files=["apps/api/intel/x.py"]),
-        make_task("SC-2", files=["apps/api/intel/x.py", "apps/api/intel/tests/"]),
-        make_task("SC-3", files=["apps/web/panel.tsx"]),
-    ])
+    g = TaskGraph(
+        [
+            make_task("SC-1", files=["apps/api/intel/x.py"]),
+            make_task("SC-2", files=["apps/api/intel/x.py", "apps/api/intel/tests/"]),
+            make_task("SC-3", files=["apps/web/panel.tsx"]),
+        ]
+    )
     pairs = g.likely_overlaps()
     assert ("SC-1", "SC-2", "apps/api/intel/x.py") in pairs
     assert not any("SC-3" in p for pair in pairs for p in pair)

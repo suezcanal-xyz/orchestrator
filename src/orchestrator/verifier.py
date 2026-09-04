@@ -11,7 +11,7 @@ import os
 import subprocess
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 # A verification command must only ever tell us pass/fail -- it must not
@@ -35,7 +35,7 @@ class VerificationResult:
     commit: str | None = None
     worker: str | None = None
     attempt: int = 1
-    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_dict(self) -> dict:
         return {
@@ -68,6 +68,7 @@ def run_command(
             command,
             shell=True,
             cwd=str(cwd),
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -80,7 +81,9 @@ def run_command(
     except subprocess.TimeoutExpired as e:
         exit_code = 124
         stdout = (e.stdout or "") if isinstance(e.stdout, str) else ""
-        stderr = ((e.stderr or "") if isinstance(e.stderr, str) else "") + f"\n[verifier] timed out after {timeout}s"
+        stderr = (
+            (e.stderr or "") if isinstance(e.stderr, str) else ""
+        ) + f"\n[verifier] timed out after {timeout}s"
     duration = time.monotonic() - start
     return VerificationResult(
         command=command,
@@ -108,7 +111,12 @@ def run_verification(
     results = []
     for cmd in commands:
         r = run_command(
-            cmd, cwd, timeout=timeout_per_command, commit=commit, worker=worker, attempt=attempt
+            cmd,
+            cwd,
+            timeout=timeout_per_command,
+            commit=commit,
+            worker=worker,
+            attempt=attempt,
         )
         results.append(r)
         if stop_on_first_failure and not r.passed:

@@ -9,7 +9,9 @@ from orchestrator import git
 def _init_repo(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=path, check=True)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=path, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"], cwd=path, check=True
+    )
     subprocess.run(["git", "config", "user.name", "Test"], cwd=path, check=True)
     (path / "README.md").write_text("hello\n", encoding="utf-8")
     subprocess.run(["git", "add", "-A"], cwd=path, check=True)
@@ -43,7 +45,9 @@ def test_create_worktree_and_isolate_changes(repo):
     # (.orchestrator/worktrees/... shows up as untracked until the bootstrap
     # step gitignores it -- see state.py -- so we only assert on tracked state.)
     tracked_changes = [
-        line for line in git.status_porcelain(repo).splitlines() if not line.startswith("??")
+        line
+        for line in git.status_porcelain(repo).splitlines()
+        if not line.startswith("??")
     ]
     assert tracked_changes == []
     assert not (repo / "new_file.txt").exists()

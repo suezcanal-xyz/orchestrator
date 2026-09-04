@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from orchestrator.milestone import MilestoneStatus
@@ -52,7 +52,7 @@ def ensure_gitignore(repo_root: Path) -> None:
 
 
 def new_run_id() -> str:
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    ts = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     return f"run-{ts}-{uuid.uuid4().hex[:6]}"
 
 
@@ -153,11 +153,12 @@ class RunManifest:
 
     def save(self, run_paths: RunPaths) -> None:
         run_paths.manifest.write_text(
-            json.dumps(self.to_dict(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+            json.dumps(self.to_dict(), indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
         )
 
     @classmethod
-    def load(cls, run_paths: RunPaths) -> "RunManifest":
+    def load(cls, run_paths: RunPaths) -> RunManifest:
         data = json.loads(run_paths.manifest.read_text(encoding="utf-8"))
         return cls(
             run_id=data["run_id"],
@@ -175,4 +176,4 @@ class RunManifest:
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()

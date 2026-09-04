@@ -28,7 +28,12 @@ import tempfile
 import time
 from pathlib import Path
 
-from orchestrator.workers.base import Worker, WorkerResponse, _safe_subprocess_env, resolve_executable
+from orchestrator.workers.base import (
+    Worker,
+    WorkerResponse,
+    _safe_subprocess_env,
+    resolve_executable,
+)
 
 _POSITIONAL_MESSAGE = "Follow the instructions in the attached file exactly."
 
@@ -62,15 +67,21 @@ class OpenCodeWorker(Worker):
                 args.append("--auto")
             args += ["--file", str(prompt_file), _POSITIONAL_MESSAGE]
 
+            env = _safe_subprocess_env()
+            # NVIDIA's OpenCode provider expects NVIDIA_API_KEY. Allow a
+            # deployment to keep the same secret under the NIM_API_KEY name.
+            env.setdefault("NVIDIA_API_KEY", env.get("NIM_API_KEY", ""))
+
             start = time.monotonic()
             try:
                 proc = subprocess.run(
                     args,
                     capture_output=True,
                     text=True,
+                    check=False,
                     encoding="utf-8",
                     errors="replace",
-                    env=_safe_subprocess_env(),
+                    env=env,
                     timeout=timeout,
                     shell=use_shell,
                 )

@@ -31,7 +31,7 @@ LOGIN_COMMANDS: dict[str, list[str]] = {
 }
 
 # One in-process event bus. The dashboard is single-user; a run at a time.
-_events: "queue.Queue[dict]" = queue.Queue()
+_events: queue.Queue[dict] = queue.Queue()
 _run_lock = threading.Lock()
 _run_active = threading.Event()
 
@@ -58,8 +58,15 @@ def _register_dashboard_hooks() -> None:
         return handler
 
     for evt in (
-        "reconcile_done", "run_started", "task_started", "task_implemented",
-        "task_verified", "task_debug_attempt", "task_done", "task_blocked", "run_finished",
+        "reconcile_done",
+        "run_started",
+        "task_started",
+        "task_implemented",
+        "task_verified",
+        "task_debug_attempt",
+        "task_done",
+        "task_blocked",
+        "run_finished",
     ):
         extensions.register_hook(evt, mk(evt))
     _register_dashboard_hooks._done = True
@@ -92,9 +99,9 @@ def _spawn_login(worker: str) -> None:
         kwargs["start_new_session"] = True
 
     if use_shell:
-        subprocess.Popen(subprocess.list2cmdline([exe, *args]), shell=True, **kwargs)  # noqa: S602
+        subprocess.Popen(subprocess.list2cmdline([exe, *args]), shell=True, **kwargs)
     else:
-        subprocess.Popen([exe, *args], **kwargs)  # noqa: S603
+        subprocess.Popen([exe, *args], **kwargs)
 
 
 def _run_engine(repo: Path, prompt: str | None, workers: list[str]) -> None:
@@ -103,12 +110,17 @@ def _run_engine(repo: Path, prompt: str | None, workers: list[str]) -> None:
     try:
         resolved = _resolve_workers(tuple(workers))
         result = engine.run(repo=repo, prompt_text=prompt, implement_workers=resolved)
-        _publish("done", {
-            "status": result.verdict.result_status.value if result.verdict else "UNKNOWN",
-            "verdict": result.run_paths.verdict.read_text(encoding="utf-8"),
-            "usage": result.usage,
-            "run_dir": str(result.run_paths.root),
-        })
+        _publish(
+            "done",
+            {
+                "status": result.verdict.result_status.value
+                if result.verdict
+                else "UNKNOWN",
+                "verdict": result.run_paths.verdict.read_text(encoding="utf-8"),
+                "usage": result.usage,
+                "run_dir": str(result.run_paths.root),
+            },
+        )
     except Exception as e:  # noqa: BLE001 - report to the page, don't crash the server
         _publish("error", {"message": f"{type(e).__name__}: {e}"})
     finally:
@@ -141,10 +153,15 @@ def create_app():
     def doctor() -> list[dict]:
         out = []
         for e in run_doctor():
-            out.append({
-                "name": e.name, "found": e.found, "path": e.path,
-                "worker_registered": e.worker_registered, "auth_note": e.auth_note,
-            })
+            out.append(
+                {
+                    "name": e.name,
+                    "found": e.found,
+                    "path": e.path,
+                    "worker_registered": e.worker_registered,
+                    "auth_note": e.auth_note,
+                }
+            )
         return out
 
     @app.post("/api/login/{worker}")
@@ -155,8 +172,10 @@ def create_app():
             _spawn_login(worker)
         except Exception as e:  # noqa: BLE001 - surface as JSON, not a 500 HTML page
             raise HTTPException(502, f"could not start {worker} login: {e}")
-        return {"started": " ".join(LOGIN_COMMANDS[worker]),
-                "note": "Complete the login in the window/browser that opened, then refresh status."}
+        return {
+            "started": " ".join(LOGIN_COMMANDS[worker]),
+            "note": "Complete the login in the window/browser that opened, then refresh status.",
+        }
 
     @app.post("/api/repo")
     def repo_status(body: dict) -> dict:
@@ -188,7 +207,9 @@ def create_app():
             if _run_active.is_set():
                 raise HTTPException(409, "a run is already in progress")
             _run_active.set()
-        threading.Thread(target=_run_engine, args=(repo, prompt, workers), daemon=True).start()
+        threading.Thread(
+            target=_run_engine, args=(repo, prompt, workers), daemon=True
+        ).start()
         return {"started": True}
 
     @app.get("/api/events")

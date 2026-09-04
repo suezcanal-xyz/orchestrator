@@ -11,7 +11,9 @@ def teardown_function(fn):
 
 
 def test_format_report_not_found():
-    report = format_report([DoctorEntry("ghost", False, None, False, "not found on PATH")])
+    report = format_report(
+        [DoctorEntry("ghost", False, None, False, "not found on PATH")]
+    )
     assert "ghost" in report
     assert "NOT FOUND" in report
 

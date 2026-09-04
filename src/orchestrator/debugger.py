@@ -9,9 +9,10 @@ hiding an unsuccessful attempt.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from orchestrator.verifier import VerificationResult, failing, overall_passed
 
@@ -22,7 +23,10 @@ if TYPE_CHECKING:
 DEFAULT_MAX_DEBUG_ATTEMPTS = 3
 
 _CLASSIFIERS: list[tuple[str, str]] = [
-    (r"ModuleNotFoundError|ImportError|Cannot find module", "MISSING_DEPENDENCY_OR_IMPORT"),
+    (
+        r"ModuleNotFoundError|ImportError|Cannot find module",
+        "MISSING_DEPENDENCY_OR_IMPORT",
+    ),
     (r"AssertionError|expect\(.*\)\.to", "ASSERTION_FAILURE"),
     (r"SyntaxError|Unexpected token|ParseError", "SYNTAX_ERROR"),
     (r"TypeError", "TYPE_ERROR"),
@@ -48,7 +52,7 @@ class DebugAttemptRecord:
     attempt: int
     classification: str
     debugger_worker: str
-    debugger_response: "WorkerResponse"
+    debugger_response: WorkerResponse
     commit: str | None
     results_after: list[VerificationResult]
     passed: bool
@@ -63,7 +67,7 @@ class DebugOutcome:
 
 
 def build_evidence_block(
-    task: "Task",
+    task: Task,
     results: list[VerificationResult],
     diff_text: str,
     previous_attempts: list[DebugAttemptRecord],
@@ -100,10 +104,10 @@ def build_evidence_block(
 def run_debug_loop(
     *,
     cwd: Path,
-    task: "Task",
+    task: Task,
     initial_results: list[VerificationResult],
     verification_commands: list[str],
-    debugger_workers: list["Worker"],
+    debugger_workers: list[Worker],
     run_verification_fn: Callable[[], list[VerificationResult]],
     get_diff_fn: Callable[[], str],
     commit_fn: Callable[[str], str | None],
@@ -126,11 +130,19 @@ def run_debug_loop(
     attempts: list[DebugAttemptRecord] = []
 
     if overall_passed(results):
-        return DebugOutcome(status="FIXED", attempts=[], final_results=results, reason="no failure to debug")
+        return DebugOutcome(
+            status="FIXED",
+            attempts=[],
+            final_results=results,
+            reason="no failure to debug",
+        )
 
     if not debugger_workers:
         return DebugOutcome(
-            status="BLOCKED", attempts=[], final_results=results, reason="no debugger workers configured"
+            status="BLOCKED",
+            attempts=[],
+            final_results=results,
+            reason="no debugger workers configured",
         )
 
     for attempt_n in range(1, max_attempts + 1):
@@ -139,7 +151,9 @@ def run_debug_loop(
         evidence = build_evidence_block(task, results, get_diff_fn(), attempts)
 
         response = worker.debug(cwd, task, evidence)
-        commit = commit_fn(f"{task.id}: debug attempt {attempt_n} ({worker.name}, {classification})")
+        commit = commit_fn(
+            f"{task.id}: debug attempt {attempt_n} ({worker.name}, {classification})"
+        )
 
         results = run_verification_fn()
         passed = overall_passed(results)
@@ -158,11 +172,18 @@ def run_debug_loop(
             on_attempt(record)
 
         if passed:
-            return DebugOutcome(status="FIXED", attempts=attempts, final_results=results, reason="verification passed")
+            return DebugOutcome(
+                status="FIXED",
+                attempts=attempts,
+                final_results=results,
+                reason="verification passed",
+            )
 
     last = attempts[-1]
     reason = (
         f"exhausted {max_attempts} debug attempts; last classification={last.classification}, "
         f"still failing: {[r.command for r in failing(results)]}"
     )
-    return DebugOutcome(status="BLOCKED", attempts=attempts, final_results=results, reason=reason)
+    return DebugOutcome(
+        status="BLOCKED", attempts=attempts, final_results=results, reason=reason
+    )

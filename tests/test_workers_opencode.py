@@ -3,7 +3,11 @@ import subprocess
 
 import pytest
 
-from orchestrator.workers.opencode import OpenCodeWorker, _iter_json_objects, _parse_events
+from orchestrator.workers.opencode import (
+    OpenCodeWorker,
+    _iter_json_objects,
+    _parse_events,
+)
 
 
 def test_iter_json_objects_handles_array_object_and_ndjson():
@@ -44,7 +48,9 @@ def test_invoke_builds_expected_args(monkeypatch, tmp_path):
         captured["kwargs"] = kwargs
         return _FakeProc(json.dumps({"type": "message", "text": "done"}))
 
-    monkeypatch.setattr("orchestrator.workers.base.shutil.which", lambda n: f"/usr/bin/{n}")
+    monkeypatch.setattr(
+        "orchestrator.workers.base.shutil.which", lambda n: f"/usr/bin/{n}"
+    )
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     w = OpenCodeWorker(model="anthropic/claude-sonnet-4")
@@ -70,7 +76,9 @@ def test_invoke_readonly_omits_auto(monkeypatch, tmp_path):
         captured["args"] = args
         return _FakeProc(json.dumps({"type": "message", "text": "read-only reply"}))
 
-    monkeypatch.setattr("orchestrator.workers.base.shutil.which", lambda n: f"/usr/bin/{n}")
+    monkeypatch.setattr(
+        "orchestrator.workers.base.shutil.which", lambda n: f"/usr/bin/{n}"
+    )
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     w = OpenCodeWorker()
@@ -82,9 +90,30 @@ def test_invoke_timeout_returns_error(monkeypatch, tmp_path):
     def fake_run(args, **kwargs):
         raise subprocess.TimeoutExpired(cmd=args, timeout=1)
 
-    monkeypatch.setattr("orchestrator.workers.base.shutil.which", lambda n: f"/usr/bin/{n}")
+    monkeypatch.setattr(
+        "orchestrator.workers.base.shutil.which", lambda n: f"/usr/bin/{n}"
+    )
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     resp = OpenCodeWorker()._invoke(tmp_path, "x", timeout=1, allow_edit=True)
     assert not resp.ok
     assert "timed out" in resp.error
+
+
+def test_invoke_maps_nim_api_key_for_opencode(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_run(args, **kwargs):
+        captured["env"] = kwargs["env"]
+        return _FakeProc(json.dumps({"type": "message", "text": "done"}))
+
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    monkeypatch.setenv("NIM_API_KEY", "nim-test-key")
+    monkeypatch.setattr(
+        "orchestrator.workers.base.shutil.which", lambda n: f"/usr/bin/{n}"
+    )
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    OpenCodeWorker()._invoke(tmp_path, "inspect please", timeout=60, allow_edit=False)
+
+    assert captured["env"]["NVIDIA_API_KEY"] == "nim-test-key"
