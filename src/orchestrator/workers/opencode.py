@@ -41,9 +41,20 @@ _POSITIONAL_MESSAGE = "Follow the instructions in the attached file exactly."
 class OpenCodeWorker(Worker):
     name = "opencode"
 
-    def __init__(self, executable: str = "opencode", model: str | None = None) -> None:
+    def __init__(
+        self,
+        executable: str = "opencode",
+        model: str | None = None,
+        *,
+        config_content: str | None = None,
+        agent: str | None = None,
+        auto_approve_edit: bool = True,
+    ) -> None:
         self.executable = executable
         self.model = model
+        self.config_content = config_content
+        self.agent = agent
+        self.auto_approve_edit = auto_approve_edit
 
     def _invoke(
         self,
@@ -63,11 +74,20 @@ class OpenCodeWorker(Worker):
             args = [exe, "run", "--dir", str(cwd), "--format", "json"]
             if self.model:
                 args += ["--model", self.model]
-            if allow_edit:
+            if self.agent:
+                mode = (
+                    ("build" if allow_edit else "plan")
+                    if self.agent == "by-mode"
+                    else self.agent
+                )
+                args += ["--agent", mode]
+            if allow_edit and self.auto_approve_edit:
                 args.append("--auto")
             args += ["--file", str(prompt_file), _POSITIONAL_MESSAGE]
 
             env = _safe_subprocess_env()
+            if self.config_content is not None:
+                env["OPENCODE_CONFIG_CONTENT"] = self.config_content
             # NVIDIA's OpenCode provider expects NVIDIA_API_KEY. Allow a
             # deployment to keep the same secret under the NIM_API_KEY name.
             env.setdefault("NVIDIA_API_KEY", env.get("NIM_API_KEY", ""))
