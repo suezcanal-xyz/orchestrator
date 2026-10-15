@@ -1,4 +1,5 @@
 """Offline unit tests: neither Ollama nor OpenCode is required."""
+
 import json
 import subprocess
 
@@ -6,7 +7,9 @@ import pytest
 
 from orchestrator.cli import _resolve_workers
 from orchestrator.workers.ollama import (
-    OllamaLocalWorker, opencode_local_config, validate_model,
+    OllamaLocalWorker,
+    opencode_local_config,
+    validate_model,
 )
 
 
@@ -15,10 +18,19 @@ def test_resolver_preserves_existing_workers():
     assert _resolve_workers(("opencode",))[0].name == "opencode"
 
 
-@pytest.mark.parametrize("bad", [
-    "ollama/qwen3:4b", "gpt-oss:20b-cloud", "glm-5:cloud", "../secret",
-    "bad model", "", "--model", "/etc/passwd",
-])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "ollama/qwen3:4b",
+        "gpt-oss:20b-cloud",
+        "glm-5:cloud",
+        "../secret",
+        "bad model",
+        "",
+        "--model",
+        "/etc/passwd",
+    ],
+)
 def test_invalid_model_rejected(bad):
     with pytest.raises(ValueError):
         validate_model(bad)
@@ -28,7 +40,10 @@ def test_readonly_config_is_local_only():
     config = json.loads(opencode_local_config("qwen3:4b", allow_edit=False))
     assert config["enabled_providers"] == ["ollama"]
     assert config["model"] == "ollama/qwen3:4b"
-    assert config["provider"]["ollama"]["options"]["baseURL"] == "http://127.0.0.1:11434/v1"
+    assert (
+        config["provider"]["ollama"]["options"]["baseURL"]
+        == "http://127.0.0.1:11434/v1"
+    )
     assert config["permission"]["bash"] == "deny"
     assert config["permission"]["edit"] == "deny"
     assert config["permission"]["external_directory"] == "deny"
@@ -56,8 +71,12 @@ def test_model_preflight_fails_closed(monkeypatch, tmp_path):
 
 def test_readonly_and_edit_paths_are_pinned(monkeypatch, tmp_path):
     monkeypatch.setenv("ORCHESTRATOR_OLLAMA_ALLOW_EDIT", "1")
-    monkeypatch.setattr("orchestrator.workers.ollama.check_installed_model", lambda model: None)
-    monkeypatch.setattr("orchestrator.workers.base.shutil.which", lambda n: f"/usr/bin/{n}")
+    monkeypatch.setattr(
+        "orchestrator.workers.ollama.check_installed_model", lambda model: None
+    )
+    monkeypatch.setattr(
+        "orchestrator.workers.base.shutil.which", lambda n: f"/usr/bin/{n}"
+    )
     called = []
 
     class FakeProc:
@@ -90,8 +109,10 @@ def test_preflight_checks_localhost_with_exact_name(monkeypatch):
     class Response:
         def __enter__(self):
             return self
+
         def __exit__(self, *_):
             return False
+
         def read(self):
             return b'{"models":[{"name":"qwen3:4b"}]}'
 
