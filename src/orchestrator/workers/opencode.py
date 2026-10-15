@@ -42,8 +42,12 @@ class OpenCodeWorker(Worker):
     name = "opencode"
 
     def __init__(
-        self, executable: str = "opencode", model: str | None = None, *,
-        config_content: str | None = None, agent: str | None = None,
+        self,
+        executable: str = "opencode",
+        model: str | None = None,
+        *,
+        config_content: str | None = None,
+        agent: str | None = None,
         auto_approve_edit: bool = True,
     ) -> None:
         self.executable = executable
@@ -71,7 +75,11 @@ class OpenCodeWorker(Worker):
             if self.model:
                 args += ["--model", self.model]
             if self.agent:
-                mode = ("build" if allow_edit else "plan") if self.agent == "by-mode" else self.agent
+                mode = (
+                    ("build" if allow_edit else "plan")
+                    if self.agent == "by-mode"
+                    else self.agent
+                )
                 args += ["--agent", mode]
             if allow_edit and self.auto_approve_edit:
                 args.append("--auto")
