@@ -68,7 +68,8 @@ def run_command(
     start = time.monotonic()
     try:
         executor = LocalExecutor(
-            execution_policy or ExecutionPolicy(allowed_roots=[cwd], timeout_seconds=timeout)
+            execution_policy
+            or ExecutionPolicy(allowed_roots=[cwd], timeout_seconds=timeout)
         )
         proc = executor.run(
             command,
