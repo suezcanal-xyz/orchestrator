@@ -70,13 +70,25 @@ def opencode_local_config(model: str, *, allow_edit: bool) -> str:
 def check_installed_model(model: str) -> str | None:
     """Check only localhost and fail closed if the selected model is absent."""
     try:
-        request = Request(f"{_LOCAL_URL}/api/tags", headers={"Accept": "application/json"})
+        request = Request(
+            f"{_LOCAL_URL}/api/tags", headers={"Accept": "application/json"}
+        )
         with urlopen(request, timeout=3) as response:
             payload = json.load(response)
-        names = [m.get("name") for m in payload.get("models", []) if isinstance(m, dict)]
+        names = [
+            m.get("name") for m in payload.get("models", []) if isinstance(m, dict)
+        ]
         if model not in names:
             return f"Model {model!r} not installed. Run: ollama pull {model}"
-    except (URLError, HTTPError, TimeoutError, OSError, ValueError, TypeError, KeyError) as exc:
+    except (
+        URLError,
+        HTTPError,
+        TimeoutError,
+        OSError,
+        ValueError,
+        TypeError,
+        KeyError,
+    ) as exc:
         return f"Cannot query Ollama at {_LOCAL_URL}: {type(exc).__name__}. Start Ollama first."
     return None
 
@@ -87,7 +99,11 @@ class OllamaLocalWorker(OpenCodeWorker):
     name = "ollama-local"
 
     def __init__(self, executable: str = "opencode", model: str | None = None) -> None:
-        chosen = model if model is not None else os.environ.get("ORCHESTRATOR_OLLAMA_MODEL", _DEFAULT_MODEL)
+        chosen = (
+            model
+            if model is not None
+            else os.environ.get("ORCHESTRATOR_OLLAMA_MODEL", _DEFAULT_MODEL)
+        )
         self.local_model = validate_model(chosen.strip())
         self.edit_opt_in = os.environ.get("ORCHESTRATOR_OLLAMA_ALLOW_EDIT") == "1"
         super().__init__(
@@ -97,22 +113,38 @@ class OllamaLocalWorker(OpenCodeWorker):
             auto_approve_edit=False,
         )
 
-    def _invoke(self, cwd, prompt, *, timeout, allow_edit, structured=False) -> WorkerResponse:
+    def _invoke(
+        self, cwd, prompt, *, timeout, allow_edit, structured=False
+    ) -> WorkerResponse:
         if allow_edit and not self.edit_opt_in:
             return WorkerResponse(
-                ok=False, summary="", raw_output="", duration_seconds=0,
+                ok=False,
+                summary="",
+                raw_output="",
+                duration_seconds=0,
                 worker=self.name,
                 error="Local edits disabled. Set ORCHESTRATOR_OLLAMA_ALLOW_EDIT=1 only in an isolated lab.",
             )
         error = check_installed_model(self.local_model)
         if error:
             return WorkerResponse(
-                ok=False, summary="", raw_output="", duration_seconds=0,
-                worker=self.name, error=error,
+                ok=False,
+                summary="",
+                raw_output="",
+                duration_seconds=0,
+                worker=self.name,
+                error=error,
             )
-        self.config_content = opencode_local_config(self.local_model, allow_edit=allow_edit)
-        result = super()._invoke(cwd, prompt, timeout=timeout,
-                                 allow_edit=allow_edit, structured=structured)
+        self.config_content = opencode_local_config(
+            self.local_model, allow_edit=allow_edit
+        )
+        result = super()._invoke(
+            cwd, prompt, timeout=timeout, allow_edit=allow_edit, structured=structured
+        )
         result.worker = self.name
-        result.extra = {**result.extra, "provider": "ollama-local", "model": self.local_model}
+        result.extra = {
+            **result.extra,
+            "provider": "ollama-local",
+            "model": self.local_model,
+        }
         return result
