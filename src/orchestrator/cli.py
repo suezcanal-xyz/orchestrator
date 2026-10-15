@@ -38,8 +38,10 @@ def _builtin_workers() -> dict[str, type[Worker]]:
     from orchestrator.workers.ollama import OllamaLocalWorker
 
     return {
-        "codex": CodexWorker, "claude": ClaudeWorker,
-        "opencode": OpenCodeWorker, "ollama-local": OllamaLocalWorker,
+        "codex": CodexWorker,
+        "claude": ClaudeWorker,
+        "opencode": OpenCodeWorker,
+        "ollama-local": OllamaLocalWorker,
     }
 
 
