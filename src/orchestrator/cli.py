@@ -34,8 +34,8 @@ DEFAULT_VERIFICATION_TIMEOUT = 600
 def _builtin_workers() -> dict[str, type[Worker]]:
     from orchestrator.workers.claude import ClaudeWorker
     from orchestrator.workers.codex import CodexWorker
-    from orchestrator.workers.opencode import OpenCodeWorker
     from orchestrator.workers.ollama import OllamaLocalWorker
+    from orchestrator.workers.opencode import OpenCodeWorker
 
     return {
         "codex": CodexWorker,
