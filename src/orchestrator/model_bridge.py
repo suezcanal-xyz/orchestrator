@@ -16,15 +16,14 @@ import statistics
 import subprocess
 import tempfile
 import time
-import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Callable
 
 import yaml
 
-from orchestrator.verifier import overall_passed, run_verification
+from orchestrator.verifier import run_verification
 from orchestrator.workers.base import Worker, WorkerResponse
 from orchestrator.workers.ollama import OllamaLocalWorker, validate_model
 from orchestrator.workers.opencode import OpenCodeWorker
