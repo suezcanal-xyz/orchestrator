@@ -285,7 +285,10 @@ def test_benchmark_rejects_test_tampering_even_when_tests_go_green(tmp_path):
     class Tamper(FakeAgent):
         def _invoke(self, cwd, prompt, *, timeout, allow_edit, structured=False):
             result = super()._invoke(
-                cwd, prompt, timeout=timeout, allow_edit=allow_edit,
+                cwd,
+                prompt,
+                timeout=timeout,
+                allow_edit=allow_edit,
                 structured=structured,
             )
             (cwd / "test_regression.py").write_text(
@@ -296,8 +299,11 @@ def test_benchmark_rejects_test_tampering_even_when_tests_go_green(tmp_path):
             return result
 
     result = evaluate(
-        repo, suite, tmp_path / "tamper",
-        confirmed_lab=True, allow_edit=True,
+        repo,
+        suite,
+        tmp_path / "tamper",
+        confirmed_lab=True,
+        allow_edit=True,
         factory=lambda target, edit: Tamper(target),
     )
     assert all(r["verdict"] == "POLICY_VIOLATION" for r in result["records"])
@@ -315,8 +321,12 @@ def test_missing_verifier_is_not_a_valid_red_baseline(tmp_path):
         encoding="utf-8",
     )
     report = evaluate(
-        repo, suite, tmp_path / "missing-verifier",
-        confirmed_lab=True, allow_edit=True, factory=factory,
+        repo,
+        suite,
+        tmp_path / "missing-verifier",
+        confirmed_lab=True,
+        allow_edit=True,
+        factory=factory,
     )
     assert all(r["verdict"] == "BASELINE_ERROR" for r in report["records"])
     assert all(m["pass_rate"] is None for m in report["models"])
