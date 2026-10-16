@@ -366,5 +366,48 @@ def doctor() -> None:
         )
 
 
+@main.command(name="compare")
+@click.argument("repo", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.argument("suite", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--output", required=True, type=click.Path(path_type=Path))
+@click.option(
+    "--allow-cloud", is_flag=True, help="Explicitly authorize hosted-model calls."
+)
+@click.option(
+    "--allow-edit", is_flag=True, help="Allow patch tasks on disposable worktrees."
+)
+@click.option(
+    "--confirm-sanitized-lab",
+    is_flag=True,
+    help="Confirm this is a sanitized, disposable clone without production access.",
+)
+def compare(
+    repo: Path,
+    suite: Path,
+    output: Path,
+    allow_cloud: bool,
+    allow_edit: bool,
+    confirm_sanitized_lab: bool,
+) -> None:
+    """Evaluate local/local or local/cloud workers against one pinned Git revision."""
+    from orchestrator.model_bridge import BridgeError, evaluate
+
+    try:
+        report = evaluate(
+            repo,
+            suite,
+            output,
+            allow_cloud=allow_cloud,
+            allow_edit=allow_edit,
+            confirmed_lab=confirm_sanitized_lab,
+        )
+    except (BridgeError, OSError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(
+        f"Bridge comparison: {len(report['records'])} trials, "
+        f"{len(report['pairs'])} pair(s); report: {output.resolve() / 'comparison.md'}"
+    )
+
+
 if __name__ == "__main__":
     main()
