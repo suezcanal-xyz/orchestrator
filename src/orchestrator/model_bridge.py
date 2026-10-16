@@ -49,6 +49,7 @@ class Scenario:
     prompt: str
     mode: str
     verification: tuple[str, ...] = ()
+    allowed_paths: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -98,7 +99,19 @@ def load_suite(path: Path) -> Suite:
             raise BridgeError(f"{ident}: invalid verification commands")
         if mode == "patch" and not checks:
             raise BridgeError(f"{ident}: patch scenarios require verification")
-        scenarios.append(Scenario(ident, prompt, mode, tuple(checks)))
+        allowed = item.get("allowed_paths", [])
+        if not isinstance(allowed, list) or any(
+            not isinstance(p, str)
+            or not p
+            or p.startswith(("/", "\\"))
+            or "\\" in p
+            or any(part in ("", ".", "..") for part in p.split("/"))
+            for p in allowed
+        ):
+            raise BridgeError(f"{ident}: allowed_paths must be safe relative file paths")
+        if mode == "patch" and not allowed:
+            raise BridgeError(f"{ident}: patch scenarios require allowed_paths")
+        scenarios.append(Scenario(ident, prompt, mode, tuple(checks), tuple(allowed)))
     parsed = []
     for item in targets:
         if not isinstance(item, dict):
@@ -461,6 +474,12 @@ def evaluate(
                         if scenario.mode == "inspect" and record["changed_files"]:
                             record["verdict"] = "POLICY_VIOLATION"
                             record["error"] = "Read-only worker changed the worktree"
+                        if scenario.mode == "patch" and any(
+                            row[3:].strip() not in scenario.allowed_paths
+                            for row in record["changed_files"]
+                        ):
+                            record["verdict"] = "POLICY_VIOLATION"
+                            record["error"] = "Worker changed a path outside scenario.allowed_paths"
                         diff = _git(wt, "diff", "--binary", "HEAD")
                         if diff:
                             record["diff_sha256"] = hashlib.sha256(
