@@ -16,10 +16,10 @@ import statistics
 import subprocess
 import tempfile
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable
 
 import yaml
 
@@ -125,7 +125,9 @@ def load_suite(path: Path) -> Suite:
         raise BridgeError("timeout_seconds must be 30..3600")
     if type(verify_timeout) is not int or not 5 <= verify_timeout <= 900:
         raise BridgeError("verification_timeout_seconds must be 5..900")
-    return Suite(name, tuple(scenarios), tuple(parsed), repeats, timeout, verify_timeout)
+    return Suite(
+        name, tuple(scenarios), tuple(parsed), repeats, timeout, verify_timeout
+    )
 
 
 def _permissions(*, edit: bool) -> dict:
@@ -175,8 +177,12 @@ def make_worker(target: Target, *, edit: bool) -> Worker:
 def _git(root: Path, *args: str) -> str:
     proc = subprocess.run(
         ["git", "-C", str(root), *args],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-        timeout=60, check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=60,
+        check=False,
     )
     if proc.returncode:
         raise BridgeError(f"git {args[0]} failed: {proc.stderr[-400:]}")
@@ -185,13 +191,19 @@ def _git(root: Path, *args: str) -> str:
 
 def _verify(checks: tuple[str, ...], path: Path, timeout: int) -> list[dict]:
     return [
-        {"command": item.command, "passed": item.passed, "exit_code": item.exit_code,
-         "duration_seconds": item.duration_seconds}
+        {
+            "command": item.command,
+            "passed": item.passed,
+            "exit_code": item.exit_code,
+            "duration_seconds": item.duration_seconds,
+        }
         for item in run_verification(list(checks), path, timeout_per_command=timeout)
     ]
 
 
-def _summarize(records: list[dict], targets: tuple[Target, ...]) -> tuple[list[dict], list[dict]]:
+def _summarize(
+    records: list[dict], targets: tuple[Target, ...]
+) -> tuple[list[dict], list[dict]]:
     summaries = []
     for t in targets:
         rr = [r for r in records if r["target"] == t.id]
@@ -199,33 +211,54 @@ def _summarize(records: list[dict], targets: tuple[Target, ...]) -> tuple[list[d
         passing = sum(r["verdict"] == "PASS" for r in scored)
         durations = [r["wall_seconds"] for r in rr if r["wall_seconds"] is not None]
         known_cost = [r["cost_usd"] for r in rr if r["cost_usd"] is not None]
-        summaries.append({
-            "target": t.id, "kind": t.kind, "model": t.model,
-            "runs": len(rr), "scored_runs": len(scored),
-            "passed": passing,
-            "pass_rate": round(passing / len(scored), 4) if scored else None,
-            "median_seconds": round(statistics.median(durations), 3) if durations else None,
-            "reported_cost_usd": round(sum(known_cost), 6) if len(known_cost) == len(rr) and rr else None,
-            "cost_coverage": f"{len(known_cost)}/{len(rr)}",
-        })
+        summaries.append(
+            {
+                "target": t.id,
+                "kind": t.kind,
+                "model": t.model,
+                "runs": len(rr),
+                "scored_runs": len(scored),
+                "passed": passing,
+                "pass_rate": round(passing / len(scored), 4) if scored else None,
+                "median_seconds": round(statistics.median(durations), 3)
+                if durations
+                else None,
+                "reported_cost_usd": round(sum(known_cost), 6)
+                if len(known_cost) == len(rr) and rr
+                else None,
+                "cost_coverage": f"{len(known_cost)}/{len(rr)}",
+            }
+        )
     pairs = []
     for first, second in itertools.combinations(summaries, 2):
-        kind = "local-local" if first["kind"] == second["kind"] == "local" else (
-            "cloud-cloud" if first["kind"] == second["kind"] == "cloud" else "local-cloud"
+        kind = (
+            "local-local"
+            if first["kind"] == second["kind"] == "local"
+            else (
+                "cloud-cloud"
+                if first["kind"] == second["kind"] == "cloud"
+                else "local-cloud"
+            )
         )
-        pairs.append({
-            "type": kind, "first": first["target"], "second": second["target"],
-            "pass_rate_delta_first_minus_second": (
-                round(first["pass_rate"] - second["pass_rate"], 4)
-                if first["pass_rate"] is not None and second["pass_rate"] is not None
-                else None
-            ),
-            "median_seconds_delta_first_minus_second": (
-                round(first["median_seconds"] - second["median_seconds"], 3)
-                if first["median_seconds"] is not None and second["median_seconds"] is not None
-                else None
-            ),
-        })
+        pairs.append(
+            {
+                "type": kind,
+                "first": first["target"],
+                "second": second["target"],
+                "pass_rate_delta_first_minus_second": (
+                    round(first["pass_rate"] - second["pass_rate"], 4)
+                    if first["pass_rate"] is not None
+                    and second["pass_rate"] is not None
+                    else None
+                ),
+                "median_seconds_delta_first_minus_second": (
+                    round(first["median_seconds"] - second["median_seconds"], 3)
+                    if first["median_seconds"] is not None
+                    and second["median_seconds"] is not None
+                    else None
+                ),
+            }
+        )
     return summaries, pairs
 
 
@@ -244,7 +277,9 @@ def _markdown(report: dict) -> str:
     ]
     for s in report["models"]:
         rate = "N/A" if s["pass_rate"] is None else f"{s['pass_rate']:.0%}"
-        cost = "unknown" if s["reported_cost_usd"] is None else str(s["reported_cost_usd"])
+        cost = (
+            "unknown" if s["reported_cost_usd"] is None else str(s["reported_cost_usd"])
+        )
         lines.append(
             f"| {s['target']} | {s['kind']} | {s['passed']}/{s['scored_runs']} | "
             f"{rate} | {s['median_seconds']} | {cost} |"
@@ -257,7 +292,9 @@ def _markdown(report: dict) -> str:
             f"median seconds delta {p['median_seconds_delta_first_minus_second']}"
         )
     lines += [
-        "", "## Trial evidence", "",
+        "",
+        "## Trial evidence",
+        "",
         "| Scenario | Target | Trial | Status | Seconds | Verification |",
         "| --- | --- | ---: | --- | ---: | --- |",
     ]
@@ -267,7 +304,8 @@ def _markdown(report: dict) -> str:
             f"{r['wall_seconds']} | {r['verification']} |"
         )
     lines += [
-        "", "## Limitations",
+        "",
+        "## Limitations",
         "",
         "- PASS is based on declared tests and a recorded code change, not model self-report.",
         "- INSPECT_ONLY is unscored for correctness; do not treat it as a pass.",
@@ -302,7 +340,9 @@ def evaluate(
     if any(s.mode == "patch" for s in suite.scenarios) and not allow_edit:
         raise BridgeError("Patch scenarios require explicit --allow-edit")
     if not (repo / ".git").exists():
-        raise BridgeError("Use a standalone sanitized Git clone, not a production worktree")
+        raise BridgeError(
+            "Use a standalone sanitized Git clone, not a production worktree"
+        )
     if output == repo or repo in output.parents:
         raise BridgeError("Reports must be outside the case-study Git checkout")
     source_sha = _git(repo, "rev-parse", "HEAD")
@@ -323,25 +363,41 @@ def evaluate(
                 _git(repo, "worktree", "add", "--detach", str(base_path), source_sha)
                 try:
                     baseline = _verify(
-                        scenario.verification, base_path, suite.verification_timeout_seconds
+                        scenario.verification,
+                        base_path,
+                        suite.verification_timeout_seconds,
                     )
-                    baseline_passed = bool(baseline) and all(x["passed"] for x in baseline)
+                    baseline_passed = bool(baseline) and all(
+                        x["passed"] for x in baseline
+                    )
                 finally:
                     _git(repo, "worktree", "remove", "--force", str(base_path))
             for trial in range(1, suite.repeats + 1):
                 # Rotate order to reduce systematic warmed-cache advantages.
                 order = list(suite.targets)
-                order = order[(trial - 1) % len(order):] + order[:(trial - 1) % len(order)]
+                order = (
+                    order[(trial - 1) % len(order) :]
+                    + order[: (trial - 1) % len(order)]
+                )
                 for target in order:
                     record = {
-                        "scenario": scenario.id, "target": target.id,
-                        "kind": target.kind, "model": target.model,
-                        "trial": trial, "mode": scenario.mode,
-                        "verdict": "NOT_RUN", "baseline_passed": baseline_passed,
-                        "wall_seconds": None, "worker_seconds": None,
-                        "verification": "NOT_RUN", "checks": [],
-                        "changed_files": [], "diff_sha256": None,
-                        "cost_usd": None, "usage": None, "error": None,
+                        "scenario": scenario.id,
+                        "target": target.id,
+                        "kind": target.kind,
+                        "model": target.model,
+                        "trial": trial,
+                        "mode": scenario.mode,
+                        "verdict": "NOT_RUN",
+                        "baseline_passed": baseline_passed,
+                        "wall_seconds": None,
+                        "worker_seconds": None,
+                        "verification": "NOT_RUN",
+                        "checks": [],
+                        "changed_files": [],
+                        "diff_sha256": None,
+                        "cost_usd": None,
+                        "usage": None,
+                        "error": None,
                     }
                     if baseline_passed is True:
                         record["verdict"] = "INVALID_BASELINE"
@@ -362,7 +418,9 @@ def evaluate(
                             f"{list(scenario.verification)}"
                         )
                         response: WorkerResponse = worker._invoke(
-                            wt, prompt, timeout=suite.timeout_seconds,
+                            wt,
+                            prompt,
+                            timeout=suite.timeout_seconds,
                             allow_edit=scenario.mode == "patch",
                         )
                         record["worker_seconds"] = response.duration_seconds
@@ -376,10 +434,14 @@ def evaluate(
                             record["verification"] = "NOT_APPLICABLE"
                         else:
                             record["checks"] = _verify(
-                                scenario.verification, wt, suite.verification_timeout_seconds
+                                scenario.verification,
+                                wt,
+                                suite.verification_timeout_seconds,
                             )
                             record["verification"] = (
-                                "PASS" if all(v["passed"] for v in record["checks"]) else "FAIL"
+                                "PASS"
+                                if all(v["passed"] for v in record["checks"])
+                                else "FAIL"
                             )
                             record["verdict"] = record["verification"]
                         record["changed_files"] = _git(
@@ -390,14 +452,17 @@ def evaluate(
                             record["diff_sha256"] = hashlib.sha256(
                                 diff.encode("utf-8")
                             ).hexdigest()
-                            (output / f"{scenario.id}-{target.id}-{trial}.diff").write_text(
-                                diff + "\n", encoding="utf-8"
-                            )
-                        if scenario.mode == "patch" and record["verdict"] == "PASS":
-                            if not record["changed_files"]:
-                                record["verdict"] = "FAIL"
-                                record["verification"] = "NO_CHANGE"
-                    except Exception as exc:
+                            (
+                                output / f"{scenario.id}-{target.id}-{trial}.diff"
+                            ).write_text(diff + "\n", encoding="utf-8")
+                        if (
+                            scenario.mode == "patch"
+                            and record["verdict"] == "PASS"
+                            and not record["changed_files"]
+                        ):
+                            record["verdict"] = "FAIL"
+                            record["verification"] = "NO_CHANGE"
+                    except Exception as exc:  # noqa: BLE001
                         record["verdict"] = "ERROR"
                         record["error"] = f"{type(exc).__name__}: {str(exc)[:200]}"
                     finally:
@@ -411,11 +476,20 @@ def evaluate(
         "created_at": datetime.now(UTC).isoformat(),
         "source_commit": source_sha,
         "suite_sha256": suite_digest,
-        "platform": {"system": platform.system(), "release": platform.release(),
-                     "python": platform.python_version(), "machine": platform.machine()},
-        "permissions": {"cloud_authorized": allow_cloud, "edit_authorized": allow_edit,
-                        "sanitized_lab_confirmed": confirmed_lab},
-        "records": records, "models": models, "pairs": pairs,
+        "platform": {
+            "system": platform.system(),
+            "release": platform.release(),
+            "python": platform.python_version(),
+            "machine": platform.machine(),
+        },
+        "permissions": {
+            "cloud_authorized": allow_cloud,
+            "edit_authorized": allow_edit,
+            "sanitized_lab_confirmed": confirmed_lab,
+        },
+        "records": records,
+        "models": models,
+        "pairs": pairs,
     }
     (output / "comparison.json").write_text(
         json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
