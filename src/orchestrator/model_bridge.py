@@ -108,7 +108,9 @@ def load_suite(path: Path) -> Suite:
             or any(part in ("", ".", "..") for part in p.split("/"))
             for p in allowed
         ):
-            raise BridgeError(f"{ident}: allowed_paths must be safe relative file paths")
+            raise BridgeError(
+                f"{ident}: allowed_paths must be safe relative file paths"
+            )
         if mode == "patch" and not allowed:
             raise BridgeError(f"{ident}: patch scenarios require allowed_paths")
         scenarios.append(Scenario(ident, prompt, mode, tuple(checks), tuple(allowed)))
@@ -199,7 +201,7 @@ def _git(root: Path, *args: str) -> str:
     )
     if proc.returncode:
         raise BridgeError(f"git {args[0]} failed: {proc.stderr[-400:]}")
-    return proc.stdout.strip()
+    return proc.stdout.rstrip("\r\n")
 
 
 def _verify(checks: tuple[str, ...], path: Path, timeout: int) -> list[dict]:
@@ -387,7 +389,9 @@ def evaluate(
                     if not baseline or any(
                         x["exit_code"] in (124, 127, 9009) for x in baseline
                     ):
-                        baseline_passed = None  # unusable verifier is not a valid red test
+                        baseline_passed = (
+                            None  # unusable verifier is not a valid red test
+                        )
                     else:
                         baseline_passed = all(x["passed"] for x in baseline)
                 finally:
@@ -479,7 +483,9 @@ def evaluate(
                             for row in record["changed_files"]
                         ):
                             record["verdict"] = "POLICY_VIOLATION"
-                            record["error"] = "Worker changed a path outside scenario.allowed_paths"
+                            record["error"] = (
+                                "Worker changed a path outside scenario.allowed_paths"
+                            )
                         diff = _git(wt, "diff", "--binary", "HEAD")
                         if diff:
                             record["diff_sha256"] = hashlib.sha256(
