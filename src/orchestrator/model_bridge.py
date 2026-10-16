@@ -207,7 +207,11 @@ def _summarize(
     summaries = []
     for t in targets:
         rr = [r for r in records if r["target"] == t.id]
-        scored = [r for r in rr if r["verdict"] in ("PASS", "FAIL", "ERROR")]
+        scored = [
+            r
+            for r in rr
+            if r["verdict"] in ("PASS", "FAIL", "ERROR", "POLICY_VIOLATION")
+        ]
         passing = sum(r["verdict"] == "PASS" for r in scored)
         durations = [r["wall_seconds"] for r in rr if r["wall_seconds"] is not None]
         known_cost = [r["cost_usd"] for r in rr if r["cost_usd"] is not None]
@@ -367,9 +371,12 @@ def evaluate(
                         base_path,
                         suite.verification_timeout_seconds,
                     )
-                    baseline_passed = bool(baseline) and all(
-                        x["passed"] for x in baseline
-                    )
+                    if not baseline or any(
+                        x["exit_code"] in (124, 127, 9009) for x in baseline
+                    ):
+                        baseline_passed = None  # unusable verifier is not a valid red test
+                    else:
+                        baseline_passed = all(x["passed"] for x in baseline)
                 finally:
                     _git(repo, "worktree", "remove", "--force", str(base_path))
             for trial in range(1, suite.repeats + 1):
@@ -399,6 +406,10 @@ def evaluate(
                         "usage": None,
                         "error": None,
                     }
+                    if scenario.mode == "patch" and baseline_passed is None:
+                        record["verdict"] = "BASELINE_ERROR"
+                        records.append(record)
+                        continue
                     if baseline_passed is True:
                         record["verdict"] = "INVALID_BASELINE"
                         records.append(record)
@@ -447,6 +458,9 @@ def evaluate(
                         record["changed_files"] = _git(
                             wt, "status", "--porcelain", "--untracked-files=all"
                         ).splitlines()
+                        if scenario.mode == "inspect" and record["changed_files"]:
+                            record["verdict"] = "POLICY_VIOLATION"
+                            record["error"] = "Read-only worker changed the worktree"
                         diff = _git(wt, "diff", "--binary", "HEAD")
                         if diff:
                             record["diff_sha256"] = hashlib.sha256(
