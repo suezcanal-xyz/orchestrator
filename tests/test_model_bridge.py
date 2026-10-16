@@ -77,6 +77,7 @@ def _suite(path: Path, *, cloud: bool = False, mode: str = "patch") -> Path:
         "    prompt: Correct the AIS passenger type check without editing tests.\n"
         + (
             "    verification:\n      - python -m unittest -q test_regression.py\n"
+            "    allowed_paths:\n      - ais_rules.py\n"
             if mode == "patch"
             else ""
         )
