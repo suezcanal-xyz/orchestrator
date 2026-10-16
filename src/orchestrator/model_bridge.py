@@ -12,6 +12,7 @@ import itertools
 import json
 import platform
 import re
+import shutil
 import statistics
 import subprocess
 import tempfile
@@ -204,6 +205,14 @@ def _git(root: Path, *args: str) -> str:
     return proc.stdout.rstrip("\r\n")
 
 
+def _verifiers_available(checks: tuple[str, ...]) -> bool:
+    """A missing executable is an invalid benchmark, not a valid red test."""
+    return all(
+        shutil.which(command.split(maxsplit=1)[0].strip('"')) is not None
+        for command in checks
+    )
+
+
 def _verify(checks: tuple[str, ...], path: Path, timeout: int) -> list[dict]:
     return [
         {
@@ -377,7 +386,7 @@ def evaluate(
         scratch = Path(td)
         for scenario in suite.scenarios:
             baseline_passed = None
-            if scenario.mode == "patch":
+            if scenario.mode == "patch" and _verifiers_available(scenario.verification):
                 base_path = scratch / f"baseline-{scenario.id}"
                 _git(repo, "worktree", "add", "--detach", str(base_path), source_sha)
                 try:
