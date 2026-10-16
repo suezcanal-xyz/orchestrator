@@ -1,4 +1,5 @@
 """Deterministic model bridge tests: no LLM, network or production dependency."""
+
 from __future__ import annotations
 
 import json
@@ -15,18 +16,21 @@ from orchestrator.workers.base import Worker, WorkerResponse
 
 def _git(root: Path, *args: str) -> None:
     subprocess.run(
-        ["git", *args], cwd=root, check=True,
-        capture_output=True, text=True,
+        ["git", *args],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
     )
 
 
 def _demo(tmp_path: Path) -> Path:
     repo = tmp_path / "seacommons-lab"
     repo.mkdir()
-    _git(repo, "init", "-b", "main")
+    _git(repo, "init", "-q")
+    _git(repo, "checkout", "-b", "main")
     (repo / "ais_rules.py").write_text(
-        "def is_excluded_ship_type(value):\n"
-        "    return value == 37\n",
+        "def is_excluded_ship_type(value):\n    return value == 37\n",
         encoding="utf-8",
     )
     (repo / "test_regression.py").write_text(
@@ -38,8 +42,16 @@ def _demo(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     _git(repo, "add", "-A")
-    _git(repo, "-c", "user.name=Bridge", "-c", "user.email=bridge@example.test",
-         "commit", "-m", "known red baseline")
+    _git(
+        repo,
+        "-c",
+        "user.name=Bridge",
+        "-c",
+        "user.email=bridge@example.test",
+        "commit",
+        "-m",
+        "known red baseline",
+    )
     return repo
 
 
@@ -49,7 +61,9 @@ def _suite(path: Path, *, cloud: bool = False, mode: str = "patch") -> Path:
         "  - id: qwen-general\n    kind: local\n    model: qwen3:4b",
     ]
     if cloud:
-        targets.append("  - id: provider-cloud\n    kind: cloud\n    model: anthropic/claude-test")
+        targets.append(
+            "  - id: provider-cloud\n    kind: cloud\n    model: anthropic/claude-test"
+        )
     suite_path = path / "suite.yaml"
     suite_path.write_text(
         "version: 1\n"
@@ -61,9 +75,14 @@ def _suite(path: Path, *, cloud: bool = False, mode: str = "patch") -> Path:
         "  - id: exclude-passengers\n"
         f"    mode: {mode}\n"
         "    prompt: Correct the AIS passenger type check without editing tests.\n"
-        + ("    verification:\n      - python -m unittest -q test_regression.py\n"
-           if mode == "patch" else "")
-        + "targets:\n" + "\n".join(targets) + "\n",
+        + (
+            "    verification:\n      - python -m unittest -q test_regression.py\n"
+            if mode == "patch"
+            else ""
+        )
+        + "targets:\n"
+        + "\n".join(targets)
+        + "\n",
         encoding="utf-8",
     )
     return suite_path
@@ -83,8 +102,11 @@ class FakeAgent(Worker):
                 encoding="utf-8",
             )
         return WorkerResponse(
-            ok=True, summary="proposed change",
-            raw_output="", duration_seconds=1.0, worker=self.target.id,
+            ok=True,
+            summary="proposed change",
+            raw_output="",
+            duration_seconds=1.0,
+            worker=self.target.id,
             cost_usd=0.001 if self.target.kind == "cloud" else None,
         )
 
@@ -109,8 +131,13 @@ def test_real_isolated_trials_and_comparable_reports(tmp_path):
     assert (out / "comparison.json").exists()
     assert "local-local" in (out / "comparison.md").read_text(encoding="utf-8")
     assert (out / "exclude-passengers-qwen-coder-1.diff").exists()
-    assert subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo).strip() == before
-    assert not subprocess.check_output(["git", "status", "--porcelain"], cwd=repo).strip()
+    assert (
+        subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo).strip()
+        == before
+    )
+    assert not subprocess.check_output(
+        ["git", "status", "--porcelain"], cwd=repo
+    ).strip()
     worktrees = subprocess.check_output(
         ["git", "worktree", "list", "--porcelain"], cwd=repo
     ).decode()
@@ -121,11 +148,22 @@ def test_hybrid_requires_cloud_authorization_and_has_pairwise_report(tmp_path):
     repo = _demo(tmp_path)
     suite = _suite(tmp_path, cloud=True)
     with pytest.raises(BridgeError, match="allow-cloud"):
-        evaluate(repo, suite, tmp_path / "nope", confirmed_lab=True,
-                 allow_edit=True, factory=factory)
+        evaluate(
+            repo,
+            suite,
+            tmp_path / "nope",
+            confirmed_lab=True,
+            allow_edit=True,
+            factory=factory,
+        )
     result = evaluate(
-        repo, suite, tmp_path / "hybrid", confirmed_lab=True,
-        allow_edit=True, allow_cloud=True, factory=factory,
+        repo,
+        suite,
+        tmp_path / "hybrid",
+        confirmed_lab=True,
+        allow_edit=True,
+        allow_cloud=True,
+        factory=factory,
     )
     assert len(result["records"]) == 6
     assert {p["type"] for p in result["pairs"]} == {"local-local", "local-cloud"}
@@ -136,8 +174,9 @@ def test_hybrid_requires_cloud_authorization_and_has_pairwise_report(tmp_path):
 def test_inspect_cannot_be_scored_as_correct(tmp_path):
     repo = _demo(tmp_path)
     suite = _suite(tmp_path, mode="inspect")
-    result = evaluate(repo, suite, tmp_path / "inspect",
-                      confirmed_lab=True, factory=factory)
+    result = evaluate(
+        repo, suite, tmp_path / "inspect", confirmed_lab=True, factory=factory
+    )
     assert all(r["verdict"] == "INSPECT_ONLY" for r in result["records"])
     assert all(m["pass_rate"] is None for m in result["models"])
 
@@ -151,8 +190,15 @@ def test_cli_requires_explicit_lab_and_edit_authorizations(tmp_path):
     assert r.exit_code != 0
     assert "confirm-sanitized-lab" in r.output
     r = CliRunner().invoke(
-        main, ["compare", str(repo), str(suite), "--output",
-               str(tmp_path / "out"), "--confirm-sanitized-lab"]
+        main,
+        [
+            "compare",
+            str(repo),
+            str(suite),
+            "--output",
+            str(tmp_path / "out"),
+            "--confirm-sanitized-lab",
+        ],
     )
     assert r.exit_code != 0
     assert "allow-edit" in r.output
@@ -160,22 +206,26 @@ def test_cli_requires_explicit_lab_and_edit_authorizations(tmp_path):
 
 def test_invalid_model_and_duplicate_ids(tmp_path):
     suite = _suite(tmp_path)
-    data = suite.read_text(encoding="utf-8").replace(
-        "qwen3:4b", "qwen3:4b-cloud"
-    )
+    data = suite.read_text(encoding="utf-8").replace("qwen3:4b", "qwen3:4b-cloud")
     suite.write_text(data, encoding="utf-8")
     with pytest.raises(ValueError, match="Cloud"):
         load_suite(suite)
-    suite.write_text(data.replace("qwen3:4b-cloud", "qwen2.5-coder:3b").replace(
-        "id: qwen-general", "id: qwen-coder"
-    ), encoding="utf-8")
+    suite.write_text(
+        data.replace("qwen3:4b-cloud", "qwen2.5-coder:3b").replace(
+            "id: qwen-general", "id: qwen-coder"
+        ),
+        encoding="utf-8",
+    )
     with pytest.raises(BridgeError, match="Duplicate target"):
         load_suite(suite)
 
 
 def test_readonly_cloud_model_provider_pinned():
     from orchestrator.model_bridge import Target
-    cloud = make_worker(Target("provider-cloud", "cloud", "anthropic/claude-test"), edit=False)
+
+    cloud = make_worker(
+        Target("provider-cloud", "cloud", "anthropic/claude-test"), edit=False
+    )
     config = json.loads(cloud.config_content)
     assert config["enabled_providers"] == ["anthropic"]
     assert config["permission"]["edit"] == "deny"
@@ -188,8 +238,12 @@ def test_dirty_lab_refused(tmp_path):
     (repo / "personal-token.env").write_text("SECRET=fake", encoding="utf-8")
     with pytest.raises(BridgeError, match="clean"):
         evaluate(
-            repo, _suite(tmp_path), tmp_path / "out",
-            confirmed_lab=True, allow_edit=True, factory=factory
+            repo,
+            _suite(tmp_path),
+            tmp_path / "out",
+            confirmed_lab=True,
+            allow_edit=True,
+            factory=factory,
         )
 
 
@@ -201,11 +255,23 @@ def test_green_baseline_is_not_counted_as_agent_success(tmp_path):
         encoding="utf-8",
     )
     _git(repo, "add", "-A")
-    _git(repo, "-c", "user.name=Bridge", "-c", "user.email=bridge@example.test",
-         "commit", "-m", "baseline already green")
+    _git(
+        repo,
+        "-c",
+        "user.name=Bridge",
+        "-c",
+        "user.email=bridge@example.test",
+        "commit",
+        "-m",
+        "baseline already green",
+    )
     result = evaluate(
-        repo, _suite(tmp_path), tmp_path / "out",
-        confirmed_lab=True, allow_edit=True, factory=factory,
+        repo,
+        _suite(tmp_path),
+        tmp_path / "out",
+        confirmed_lab=True,
+        allow_edit=True,
+        factory=factory,
     )
     assert all(r["verdict"] == "INVALID_BASELINE" for r in result["records"])
     assert all(m["pass_rate"] is None for m in result["models"])
