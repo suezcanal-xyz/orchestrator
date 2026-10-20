@@ -1,9 +1,9 @@
-"""opencode CLI worker, invoked non-interactively via `opencode run`.
+﻿"""opencode CLI worker, invoked non-interactively via `opencode run`.
 
-Contract (opencode >= 1.18):
+Contract (OpenCode V1 >= 1.18 and V2):
 
-    opencode run --dir <cwd> --format json [--model <provider/model>] [--auto] \
-        --file <prompt_file> "Follow the instructions in the attached file."
+    opencode run [--standalone] --format json [--model <provider/model>] [--auto] \
+        "Follow the instructions in the attached file." --file <prompt_file>
 
 The full (multi-KB, quote-heavy) prompt is written to a temp file and
 attached with `--file`; the positional message is a short fixed ASCII
@@ -49,12 +49,14 @@ class OpenCodeWorker(Worker):
         config_content: str | None = None,
         agent: str | None = None,
         auto_approve_edit: bool = True,
+        standalone: bool = False,
     ) -> None:
         self.executable = executable
         self.model = model
         self.config_content = config_content
         self.agent = agent
         self.auto_approve_edit = auto_approve_edit
+        self.standalone = standalone
 
     def _invoke(
         self,
@@ -71,7 +73,10 @@ class OpenCodeWorker(Worker):
             prompt_file = Path(td) / "prompt.md"
             prompt_file.write_text(prompt, encoding="utf-8")
 
-            args = [exe, "run", "--dir", str(cwd), "--format", "json"]
+            args = [exe, "run"]
+            if self.standalone:
+                args.append("--standalone")
+            args += ["--format", "json"]
             if self.model:
                 args += ["--model", self.model]
             if self.agent:
@@ -97,12 +102,15 @@ class OpenCodeWorker(Worker):
             try:
                 proc = subprocess.run(
                     args,
+                    # The prompt is attached; inherited stdin can block CLI startup.
+                    stdin=subprocess.DEVNULL,
                     capture_output=True,
                     text=True,
                     check=False,
                     encoding="utf-8",
                     errors="replace",
                     env=env,
+                    cwd=str(cwd),
                     timeout=timeout,
                     shell=use_shell,
                 )
