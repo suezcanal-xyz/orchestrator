@@ -83,7 +83,8 @@ class OpenCodeWorker(Worker):
                 args += ["--agent", mode]
             if allow_edit and self.auto_approve_edit:
                 args.append("--auto")
-            args += ["--file", str(prompt_file), _POSITIONAL_MESSAGE]
+            # --file is variadic: keep the positional message before it.
+            args += [_POSITIONAL_MESSAGE, "--file", str(prompt_file)]
 
             env = _safe_subprocess_env()
             if self.config_content is not None:

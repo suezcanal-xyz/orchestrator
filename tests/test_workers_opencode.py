@@ -64,6 +64,10 @@ def test_invoke_builds_expected_args(monkeypatch, tmp_path):
     assert "--model" in args and "anthropic/claude-sonnet-4" in args
     assert "--auto" in args  # allow_edit=True
     assert "--file" in args
+    # OpenCode's --file is variadic: a following positional message is
+    # consumed as another filename and the real CLI fails before inference.
+    message = "Follow the instructions in the attached file exactly."
+    assert args.index(message) < args.index("--file")
     # the variable-length prompt is NOT in argv
     assert not any("big prompt big prompt" in str(a) for a in args)
     assert resp.ok and resp.summary == "done"
